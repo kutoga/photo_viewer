@@ -38,6 +38,12 @@ let newItemCleanup = null;
 let renderTimer = null;
 let mediaFilter = 'all'; // 'all' | 'photo' | 'video'
 
+// Date range filter (timestamps in ms, null = no restriction)
+let dateSliderMin = null;   // overall min date across all photos
+let dateSliderMax = null;   // overall max date across all photos
+let dateFilterMin = null;   // user-selected min
+let dateFilterMax = null;   // user-selected max
+
 // ─── Map initialisation ───────────────────────────────────────────────────────
 
 function initMap() {
@@ -139,14 +145,21 @@ function toggleLabels(show) {
 function getFilteredPhotos() {
   return allPhotos.filter((p) => {
     if (p.lat === null || p.lng === null) return false;
-    if (mediaFilter === 'photo') return p.type !== 'video';
-    if (mediaFilter === 'video') return p.type === 'video';
+    if (mediaFilter === 'photo' && p.type === 'video') return false;
+    if (mediaFilter === 'video' && p.type !== 'video') return false;
+    // Date range filter
+    if (dateFilterMin != null && dateFilterMax != null && p.date) {
+      const ts = new Date(p.date).getTime();
+      if (ts < dateFilterMin || ts > dateFilterMax) return false;
+    }
     return true;
   });
 }
 
 async function loadPhotosAndRender(fitBounds = true) {
   allPhotos = await window.photoMap.getAllPhotos();
+
+  initDateSlider();
 
   const gpsPhotos = getFilteredPhotos();
 
@@ -405,21 +418,30 @@ function renderOverlapOverlay(centerLat, centerLng, groupProps, markerSize) {
 
   const icon = L.divIcon({
     className: '',
-    html: `<div style="position:relative;width:${containerSize}px;height:${containerSize}px">${html}</div>`,
+    html: `<div style="position:relative;width:${containerSize}px;height:${containerSize}px;pointer-events:none">${html}</div>`,
     iconSize: [containerSize, containerSize],
     iconAnchor: [cx, cy],
   });
 
   const marker = L.marker([centerLat, centerLng], { icon });
-  marker.on('click', (e) => {
-    const thumb = e.originalEvent.target.closest('.overlap-thumb');
-    if (!thumb) return;
-    const id = thumb.dataset.id;
-    const lbIdx = lightboxList.findIndex((p) => p.id === id);
-    lightboxIndex = lbIdx >= 0 ? lbIdx : 0;
-    openLightboxAt(lightboxIndex);
-  });
   markerLayer.addLayer(marker);
+
+  // Set pointer-events:none on the Leaflet wrapper so clicks pass through gaps
+  // between thumbnails to reach markers from other overlap groups underneath.
+  // Individual thumbnails get pointer-events:auto so they remain clickable.
+  const el = marker.getElement();
+  if (el) {
+    el.style.pointerEvents = 'none';
+    el.querySelectorAll('.overlap-thumb').forEach((thumb) => {
+      thumb.style.pointerEvents = 'auto';
+      thumb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = thumb.dataset.id;
+        const lbIdx = lightboxList.findIndex((p) => p.id === id);
+        if (lbIdx >= 0) openLightboxAt(lbIdx);
+      });
+    });
+  }
 }
 
 // ─── Cluster bubble ───────────────────────────────────────────────────────────
@@ -581,62 +603,21 @@ async function openLightboxAt(index) {
   const coordsEl = document.getElementById('lightbox-coords');
   const fileEl = document.getElementById('lightbox-filepath');
   const counterEl = document.getElementById('lightbox-counter');
-
-  const previewUrl = await window.photoMap.getPreviewPath(props.id);
-  if (lightboxList[lightboxIndex]?.id !== props.id) return; // navigated away
-
-  const isVideo = props.type === 'video';
-  const isFirstOpen = lb.classList.contains('hidden');
   const playBtn = document.getElementById('lightbox-play');
+  const isVideo = props.type === 'video';
 
-  // Always stop any playing video first
+  // ── Synchronous: show lightbox immediately with thumbnail ──────────────
+  // Must happen BEFORE any await, otherwise debouncedRender() can rebuild
+  // lightboxList during the yield, causing the guard check to silently abort.
+
   vid.pause();
   vid.src = '';
   vid.classList.add('hidden');
   playBtn.classList.add('hidden');
   playBtn.onclick = null;
 
-  if (isVideo) {
-    // Show the preview frame image with a play button overlay
-    img.classList.remove('hidden');
-    const frameUrl = `cache://previews/${props.id}_preview.jpg`;
-    if (isFirstOpen) {
-      img.src = `cache://thumbnails/${props.id}_thumb.jpg`;
-    }
-    const preload = new Image();
-    preload.onload = () => {
-      if (lightboxList[lightboxIndex]?.id === props.id) {
-        img.src = frameUrl;
-      }
-    };
-    preload.src = frameUrl;
-
-    playBtn.classList.remove('hidden');
-    playBtn.onclick = () => {
-      img.classList.add('hidden');
-      playBtn.classList.add('hidden');
-      vid.classList.remove('hidden');
-      vid.src = previewUrl; // file:// URL to original video
-      vid.load();
-      vid.play();
-    };
-  } else {
-    img.classList.remove('hidden');
-
-    // Preload the high-res preview in the background.
-    // On first open: show thumbnail as fast placeholder.
-    // On navigation: keep the current image visible (no flicker).
-    if (isFirstOpen) {
-      img.src = `cache://thumbnails/${props.id}_thumb.jpg`;
-    }
-    const preload = new Image();
-    preload.onload = () => {
-      if (lightboxList[lightboxIndex]?.id === props.id) {
-        img.src = previewUrl;
-      }
-    };
-    preload.src = previewUrl;
-  }
+  img.classList.remove('hidden');
+  img.src = `cache://thumbnails/${props.id}_thumb.jpg`;
 
   if (props.date) {
     const d = new Date(props.date);
@@ -646,7 +627,6 @@ async function openLightboxAt(index) {
     dateEl.textContent = '';
   }
 
-  // Coordinates → clickable link to Google Maps
   if (props.lat != null && props.lng != null) {
     const latStr = props.lat.toFixed(6);
     const lngStr = props.lng.toFixed(6);
@@ -660,7 +640,6 @@ async function openLightboxAt(index) {
     coordsEl.onclick = null;
   }
 
-  // File path → clickable link to reveal in file explorer
   if (props.originalPath) {
     fileEl.textContent = props.originalPath;
     fileEl.title = 'Show in file explorer';
@@ -683,6 +662,40 @@ async function openLightboxAt(index) {
   document.getElementById('lightbox-next').classList.toggle('hidden', lightboxList.length <= 1);
 
   lb.classList.remove('hidden');
+
+  // ── Async: load high-res preview and swap it in ────────────────────────
+
+  const previewUrl = await window.photoMap.getPreviewPath(props.id);
+  if (lightboxList[lightboxIndex]?.id !== props.id) return; // user navigated away
+
+  if (isVideo) {
+    const frameUrl = `cache://previews/${props.id}_preview.jpg`;
+    const preload = new Image();
+    preload.onload = () => {
+      if (lightboxList[lightboxIndex]?.id === props.id) {
+        img.src = frameUrl;
+      }
+    };
+    preload.src = frameUrl;
+
+    playBtn.classList.remove('hidden');
+    playBtn.onclick = () => {
+      img.classList.add('hidden');
+      playBtn.classList.add('hidden');
+      vid.classList.remove('hidden');
+      vid.src = previewUrl;
+      vid.load();
+      vid.play();
+    };
+  } else {
+    const preload = new Image();
+    preload.onload = () => {
+      if (lightboxList[lightboxIndex]?.id === props.id) {
+        img.src = previewUrl;
+      }
+    };
+    preload.src = previewUrl;
+  }
 }
 
 function closeLightbox() {
@@ -808,6 +821,281 @@ function openHelp() {
 
 function closeHelp() {
   document.getElementById('help').classList.add('hidden');
+}
+
+// ─── Date range slider ───────────────────────────────────────────────────────
+
+let calTarget = null;   // 'min' | 'max' | null
+let calViewDate = null;  // Date object for the currently displayed month
+
+function initDateSlider() {
+  const slider = document.getElementById('date-slider');
+  const minInput = document.getElementById('date-range-min');
+  const maxInput = document.getElementById('date-range-max');
+
+  // Collect all dates from geotagged photos (regardless of media filter)
+  const dates = allPhotos
+    .filter((p) => p.lat != null && p.lng != null && p.date)
+    .map((p) => new Date(p.date).getTime())
+    .filter((t) => !isNaN(t));
+
+  if (dates.length < 2) {
+    slider.classList.add('hidden');
+    dateSliderMin = null;
+    dateSliderMax = null;
+    dateFilterMin = null;
+    dateFilterMax = null;
+    return;
+  }
+
+  dateSliderMin = Math.min(...dates);
+  dateSliderMax = Math.max(...dates);
+
+  // Preserve user selection if it's still within new bounds, otherwise reset
+  if (dateFilterMin == null || dateFilterMin < dateSliderMin) dateFilterMin = dateSliderMin;
+  if (dateFilterMax == null || dateFilterMax > dateSliderMax) dateFilterMax = dateSliderMax;
+
+  minInput.min = dateSliderMin;
+  minInput.max = dateSliderMax;
+  minInput.value = dateFilterMin;
+
+  maxInput.min = dateSliderMin;
+  maxInput.max = dateSliderMax;
+  maxInput.value = dateFilterMax;
+
+  updateDateSliderUI();
+  slider.classList.remove('hidden');
+}
+
+function updateDateSliderUI() {
+  const minLabel = document.getElementById('date-label-min');
+  const maxLabel = document.getElementById('date-label-max');
+  const fill = document.getElementById('date-track-fill');
+  const resetBtn = document.getElementById('date-reset-btn');
+
+  minLabel.textContent = formatSliderDate(dateFilterMin);
+  maxLabel.textContent = formatSliderDate(dateFilterMax);
+
+  // Show reset button when range is narrowed
+  const isNarrowed = dateFilterMin > dateSliderMin || dateFilterMax < dateSliderMax;
+  resetBtn.classList.toggle('hidden', !isNarrowed);
+
+  // Position the blue fill bar between the two thumbs
+  const range = dateSliderMax - dateSliderMin;
+  if (range > 0) {
+    const leftPct = ((dateFilterMin - dateSliderMin) / range) * 100;
+    const rightPct = ((dateSliderMax - dateFilterMax) / range) * 100;
+    fill.style.left = leftPct + '%';
+    fill.style.right = rightPct + '%';
+  }
+}
+
+function formatSliderDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function onDateSliderChange() {
+  const minInput = document.getElementById('date-range-min');
+  const maxInput = document.getElementById('date-range-max');
+
+  let minVal = parseInt(minInput.value, 10);
+  let maxVal = parseInt(maxInput.value, 10);
+
+  // Prevent handles from crossing
+  if (minVal > maxVal) {
+    minVal = maxVal;
+    minInput.value = minVal;
+  }
+
+  dateFilterMin = minVal;
+  dateFilterMax = maxVal;
+  updateDateSliderUI();
+  applyDateFilter();
+}
+
+function applyDateFilter() {
+  const gpsPhotos = getFilteredPhotos();
+  heatPoints = gpsPhotos.map((p) => [p.lat, p.lng, 1]);
+  updatePhotoCount(gpsPhotos.length);
+  buildSupercluster(gpsPhotos);
+  renderForZoom();
+}
+
+function resetDateFilter() {
+  if (dateSliderMin == null) return;
+  dateFilterMin = dateSliderMin;
+  dateFilterMax = dateSliderMax;
+
+  document.getElementById('date-range-min').value = dateFilterMin;
+  document.getElementById('date-range-max').value = dateFilterMax;
+  updateDateSliderUI();
+  applyDateFilter();
+  closeCalendar();
+}
+
+// ─── Calendar popup ──────────────────────────────────────────────────────────
+
+function openCalendar(target) {
+  const popup = document.getElementById('cal-popup');
+  const pillMin = document.getElementById('date-pill-min');
+  const pillMax = document.getElementById('date-pill-max');
+
+  // Toggle off if same target clicked again
+  if (calTarget === target && !popup.classList.contains('hidden')) {
+    closeCalendar();
+    return;
+  }
+
+  calTarget = target;
+  pillMin.classList.toggle('active', target === 'min');
+  pillMax.classList.toggle('active', target === 'max');
+
+  // Start calendar on the month of the currently selected date
+  const ts = target === 'min' ? dateFilterMin : dateFilterMax;
+  calViewDate = new Date(ts);
+  calViewDate.setDate(1);
+
+  renderCalendar();
+
+  // Position the popup above the pill
+  const pill = target === 'min' ? pillMin : pillMax;
+  const rect = pill.getBoundingClientRect();
+  popup.classList.remove('hidden');
+
+  const popupW = popup.offsetWidth;
+  let left = rect.left + rect.width / 2 - popupW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - popupW - 8));
+  popup.style.left = left + 'px';
+  popup.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+  popup.style.top = 'auto';
+}
+
+function closeCalendar() {
+  document.getElementById('cal-popup').classList.add('hidden');
+  document.getElementById('date-pill-min').classList.remove('active');
+  document.getElementById('date-pill-max').classList.remove('active');
+  calTarget = null;
+}
+
+function renderCalendar() {
+  const grid = document.getElementById('cal-grid');
+  const title = document.getElementById('cal-title');
+
+  const year = calViewDate.getFullYear();
+  const month = calViewDate.getMonth();
+  const monthNames = ['January','February','March','April','May','June',
+    'July','August','September','October','November','December'];
+  title.textContent = `${monthNames[month]} ${year}`;
+
+  // First day of month and how many days
+  const firstDay = new Date(year, month, 1);
+  let startWeekday = firstDay.getDay() - 1; // Monday=0
+  if (startWeekday < 0) startWeekday = 6;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Previous month fill
+  const daysInPrev = new Date(year, month, 0).getDate();
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+
+  // Selected dates as day boundaries
+  const selMin = new Date(dateFilterMin);
+  const selMax = new Date(dateFilterMax);
+  const rangeMinDay = new Date(dateSliderMin);
+  const rangeMaxDay = new Date(dateSliderMax);
+
+  let html = '';
+
+  // Previous month days
+  for (let i = startWeekday - 1; i >= 0; i--) {
+    const day = daysInPrev - i;
+    const d = new Date(year, month - 1, day);
+    const cls = getDayClasses(d, selMin, selMax, rangeMinDay, rangeMaxDay, todayStr);
+    html += `<button class="cal-day other-month ${cls}" data-ts="${d.getTime()}">${day}</button>`;
+  }
+
+  // Current month days
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, month, day);
+    const cls = getDayClasses(d, selMin, selMax, rangeMinDay, rangeMaxDay, todayStr);
+    html += `<button class="cal-day ${cls}" data-ts="${d.getTime()}">${day}</button>`;
+  }
+
+  // Next month fill to complete the grid (6 rows max)
+  const totalCells = startWeekday + daysInMonth;
+  const remaining = (7 - (totalCells % 7)) % 7;
+  for (let day = 1; day <= remaining; day++) {
+    const d = new Date(year, month + 1, day);
+    const cls = getDayClasses(d, selMin, selMax, rangeMinDay, rangeMaxDay, todayStr);
+    html += `<button class="cal-day other-month ${cls}" data-ts="${d.getTime()}">${day}</button>`;
+  }
+
+  grid.innerHTML = html;
+}
+
+function getDayClasses(d, selMin, selMax, rangeMin, rangeMax, todayStr) {
+  const cls = [];
+  const dayStr = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+  if (dayStr === todayStr) cls.push('today');
+
+  // Disable days outside the photo date range
+  if (d < startOfDay(rangeMin) || d > endOfDay(rangeMax)) {
+    cls.push('disabled');
+    return cls.join(' ');
+  }
+
+  // Check if this day is the selected start or end date
+  if (sameDay(d, selMin) || sameDay(d, selMax)) cls.push('selected');
+  else if (d >= startOfDay(selMin) && d <= endOfDay(selMax)) cls.push('in-range');
+
+  return cls.join(' ');
+}
+
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function endOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+function onCalendarDayClick(ts) {
+  if (!calTarget) return;
+
+  // Set the filter to the start or end of the clicked day
+  if (calTarget === 'min') {
+    const d = new Date(ts);
+    dateFilterMin = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    if (dateFilterMin > dateFilterMax) dateFilterMin = dateFilterMax;
+    document.getElementById('date-range-min').value = dateFilterMin;
+  } else {
+    const d = new Date(ts);
+    dateFilterMax = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    if (dateFilterMax < dateFilterMin) dateFilterMax = dateFilterMin;
+    document.getElementById('date-range-max').value = dateFilterMax;
+  }
+
+  updateDateSliderUI();
+  applyDateFilter();
+  renderCalendar(); // refresh highlights
+}
+
+function calPrevMonth() {
+  calViewDate.setMonth(calViewDate.getMonth() - 1);
+  renderCalendar();
+}
+
+function calNextMonth() {
+  calViewDate.setMonth(calViewDate.getMonth() + 1);
+  renderCalendar();
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
@@ -962,6 +1250,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('gallery-close').addEventListener('click', closeGallery);
   document.getElementById('gallery-backdrop').addEventListener('click', closeGallery);
 
+  // Date range slider + calendar
+  document.getElementById('date-range-min').addEventListener('input', onDateSliderChange);
+  document.getElementById('date-range-max').addEventListener('input', onDateSliderChange);
+  document.getElementById('date-pill-min').addEventListener('click', () => openCalendar('min'));
+  document.getElementById('date-pill-max').addEventListener('click', () => openCalendar('max'));
+  document.getElementById('date-reset-btn').addEventListener('click', resetDateFilter);
+  document.getElementById('cal-prev').addEventListener('click', calPrevMonth);
+  document.getElementById('cal-next').addEventListener('click', calNextMonth);
+  document.getElementById('cal-grid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.cal-day');
+    if (!btn || btn.classList.contains('disabled')) return;
+    onCalendarDayClick(parseInt(btn.dataset.ts, 10));
+  });
+  // Close calendar on outside click
+  document.addEventListener('mousedown', (e) => {
+    const popup = document.getElementById('cal-popup');
+    if (popup.classList.contains('hidden')) return;
+    if (popup.contains(e.target)) return;
+    if (e.target.closest('.date-pill')) return;
+    closeCalendar();
+  });
+
   // Media filter
   document.getElementById('media-filter').addEventListener('change', (e) => {
     mediaFilter = e.target.value;
@@ -987,6 +1297,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (isLightboxOpen()) { closeLightbox(); return; }
+      if (calTarget) { closeCalendar(); return; }
       if (isHelpOpen()) { closeHelp(); return; }
       if (isGalleryOpen()) { closeGallery(); return; }
     }

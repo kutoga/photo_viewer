@@ -813,5 +813,303 @@ html, body {
   pointer-events: none;
 }
 
+/* ── Date range slider ──────────────────────────────────────────── */
+#date-slider {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 6px 6px 6px 8px;
+  background: rgba(18, 18, 22, 0.92);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  width: clamp(380px, 55vw, 720px);
+}
+#date-slider.hidden { display: none; }
+
+#date-slider-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Date pill buttons */
+.date-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  min-width: 90px;
+}
+.date-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.date-pill:active { background: rgba(255, 255, 255, 0.13); }
+.date-pill.active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.date-pill-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #6b7280;
+}
+.date-pill-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e7eb;
+  font-variant-numeric: tabular-nums;
+}
+
+#date-pill-max { align-items: flex-end; }
+
+/* Reset button */
+#date-reset-btn {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+#date-reset-btn:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
+#date-reset-btn.hidden { display: none; }
+
+/* Slider track area */
+#date-track-wrap {
+  position: relative;
+  flex: 1;
+  height: 32px;
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+}
+
+#date-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+#date-track-fill {
+  position: absolute;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 3px;
+  transition: left 0.08s, right 0.08s;
+}
+
+/* Both range inputs overlay the same track area */
+#date-range-min,
+#date-range-max {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+}
+
+/* Webkit thumb */
+#date-range-min::-webkit-slider-thumb,
+#date-range-max::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: grab;
+  pointer-events: auto;
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 2px rgba(59, 130, 246, 0.5);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+#date-range-min::-webkit-slider-thumb:hover,
+#date-range-max::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 0 0 3px rgba(59, 130, 246, 0.6);
+}
+#date-range-min::-webkit-slider-thumb:active,
+#date-range-max::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+
+/* Firefox thumb */
+#date-range-min::-moz-range-thumb,
+#date-range-max::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: grab;
+  pointer-events: auto;
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+#date-range-min::-moz-range-thumb:active,
+#date-range-max::-moz-range-thumb:active { cursor: grabbing; }
+
+/* Hide default track */
+#date-range-min::-webkit-slider-runnable-track,
+#date-range-max::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0;
+}
+#date-range-min::-moz-range-track,
+#date-range-max::-moz-range-track {
+  height: 0;
+  background: transparent;
+  border: none;
+}
+
+/* Ensure max thumb renders on top */
+#date-range-max { z-index: 1; }
+
+/* ── Calendar popup ────────────────────────────────────────────── */
+#cal-popup {
+  position: fixed;
+  z-index: 2000;
+  width: 260px;
+  background: rgba(22, 22, 28, 0.97);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.6),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 12px;
+  animation: cal-in 0.15s ease;
+}
+#cal-popup.hidden { display: none; }
+
+@keyframes cal-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+#cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+#cal-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: #e5e7eb;
+  letter-spacing: -0.2px;
+}
+
+#cal-prev, #cal-next {
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #9ca3af;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+  line-height: 1;
+}
+#cal-prev:hover, #cal-next:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+#cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 4px;
+}
+#cal-weekdays span {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 2px 0;
+}
+
+#cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-day {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  transition: background 0.1s, color 0.1s;
+}
+.cal-day:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.cal-day.in-range { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
+.cal-day.selected {
+  background: #3b82f6;
+  color: #fff;
+  font-weight: 700;
+}
+.cal-day.other-month { color: #3f3f46; }
+.cal-day.other-month:hover { color: #71717a; background: rgba(255, 255, 255, 0.04); }
+.cal-day.disabled { color: #27272a; cursor: default; pointer-events: none; }
+.cal-day.today { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15); }
+
 /* ── Generic hidden class ────────────────────────────────────────── */
 .hidden { display: none !important; }
