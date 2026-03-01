@@ -26,7 +26,10 @@
   <div id="panel">
     <div id="panel-header">
       <span id="panel-title">Photo Map</span>
-      <button id="panel-toggle" aria-label="Collapse panel">&#x2212;</button>
+      <div id="panel-header-actions">
+        <button id="help-btn" aria-label="Help" title="Help">?</button>
+        <button id="panel-toggle" aria-label="Collapse panel">&#x2212;</button>
+      </div>
     </div>
 
     <div id="panel-body">
@@ -62,7 +65,90 @@
           <option value="photo">Photos only</option>
           <option value="video">Videos only</option>
         </select>
+        <button id="gallery-btn" title="Browse photos in view">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <rect x="0" y="0" width="4" height="4" rx="0.8"/>
+            <rect x="5" y="0" width="4" height="4" rx="0.8"/>
+            <rect x="10" y="0" width="4" height="4" rx="0.8"/>
+            <rect x="0" y="5" width="4" height="4" rx="0.8"/>
+            <rect x="5" y="5" width="4" height="4" rx="0.8"/>
+            <rect x="10" y="5" width="4" height="4" rx="0.8"/>
+            <rect x="0" y="10" width="4" height="4" rx="0.8"/>
+            <rect x="5" y="10" width="4" height="4" rx="0.8"/>
+            <rect x="10" y="10" width="4" height="4" rx="0.8"/>
+          </svg>
+        </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Help overlay -->
+  <div id="help" class="hidden">
+    <div id="help-backdrop"></div>
+    <div id="help-panel">
+      <div id="help-header">
+        <span id="help-title">Help</span>
+        <button id="help-close" aria-label="Close help">&times;</button>
+      </div>
+      <div id="help-body">
+        <section>
+          <h3>Getting Started</h3>
+          <p>Click <strong>+ Add Folder</strong> to select a folder containing photos or videos. The app scans for GPS-tagged media and displays them on the satellite map.</p>
+        </section>
+        <section>
+          <h3>Map Navigation</h3>
+          <ul>
+            <li><strong>Zoom out</strong> &mdash; heatmap overview of photo density</li>
+            <li><strong>Zoom mid</strong> &mdash; cluster bubbles showing photo count (click to expand)</li>
+            <li><strong>Zoom in</strong> &mdash; individual photo thumbnails on the map</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Viewing Photos</h3>
+          <ul>
+            <li>Click any thumbnail to open it in the lightbox</li>
+            <li>Use <kbd>&larr;</kbd> <kbd>&rarr;</kbd> arrow keys or the on-screen arrows to navigate</li>
+            <li>Press <kbd>Esc</kbd> or click the backdrop to close</li>
+            <li>Coordinates link to Google Maps &middot; file path reveals in explorer</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Controls</h3>
+          <ul>
+            <li><strong>Show labels</strong> &mdash; overlay street names and place labels</li>
+            <li><strong>Media filter</strong> &mdash; show photos only, videos only, or all</li>
+            <li>
+              <strong>Gallery</strong>
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor" style="vertical-align:-1px;margin:0 2px">
+                <rect x="0" y="0" width="4" height="4" rx="0.8"/><rect x="5" y="0" width="4" height="4" rx="0.8"/><rect x="10" y="0" width="4" height="4" rx="0.8"/>
+                <rect x="0" y="5" width="4" height="4" rx="0.8"/><rect x="5" y="5" width="4" height="4" rx="0.8"/><rect x="10" y="5" width="4" height="4" rx="0.8"/>
+                <rect x="0" y="10" width="4" height="4" rx="0.8"/><rect x="5" y="10" width="4" height="4" rx="0.8"/><rect x="10" y="10" width="4" height="4" rx="0.8"/>
+              </svg>
+              &mdash; browse all photos in the current view as a grid
+            </li>
+            <li><strong>Refresh</strong> &#x21bb; &mdash; rescan all folders for new or changed files</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Keyboard Shortcuts</h3>
+          <ul>
+            <li><kbd>Esc</kbd> &mdash; close lightbox / gallery / help</li>
+            <li><kbd>&larr;</kbd> / <kbd>&rarr;</kbd> &mdash; previous / next photo in lightbox</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gallery overlay -->
+  <div id="gallery" class="hidden">
+    <div id="gallery-backdrop"></div>
+    <div id="gallery-panel">
+      <div id="gallery-header">
+        <span id="gallery-count"></span>
+        <button id="gallery-close" aria-label="Close gallery">&times;</button>
+      </div>
+      <div id="gallery-grid"></div>
     </div>
   </div>
 

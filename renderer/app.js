@@ -50,16 +50,48 @@ function initMap() {
 
   // ESRI satellite tiles (free, no API key)
   // maxNativeZoom=19 is where tiles exist; maxZoom=22 lets Leaflet oversample beyond that
-  L.tileLayer(
+  // keepBuffer=8 retains lower-zoom tiles so they show through when error tiles are hidden
+  const esriTiles = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {
       attribution: 'Tiles &copy; Esri',
       maxNativeZoom: 19,
       maxZoom: 22,
       detectRetina: true,
+      keepBuffer: 8,
+      crossOrigin: 'anonymous',
       errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQIHWNgAAIABAABAAGpSwAAAABJRU5ErkJggg==',
     }
-  ).addTo(map);
+  );
+
+  // ESRI returns HTTP 200 with a placeholder image ("Map data not available")
+  // instead of 404 when tiles don't exist. Detect these by sampling pixel color
+  // and hide them so the lower-zoom tile (kept via keepBuffer) shows through.
+  esriTiles.on('tileload', (e) => {
+    try {
+      const img = e.tile;
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 4;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, 4, 4);
+      const d = ctx.getImageData(0, 0, 4, 4).data;
+      // ESRI error tiles are uniform beige/tan ~(226, 220, 207).
+      // Check first pixel for that color range AND low variance across samples.
+      const r0 = d[0], g0 = d[1], b0 = d[2];
+      if (r0 > 200 && g0 > 190 && b0 > 170 && r0 - b0 > 10 && r0 - b0 < 40) {
+        let maxDiff = 0;
+        for (let i = 4; i < d.length; i += 4) {
+          maxDiff = Math.max(maxDiff, Math.abs(d[i] - r0), Math.abs(d[i+1] - g0), Math.abs(d[i+2] - b0));
+        }
+        if (maxDiff < 15) {
+          img.style.opacity = '0';
+        }
+      }
+    } catch (_) { /* CORS or canvas error — ignore */ }
+  });
+
+  esriTiles.addTo(map);
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -89,11 +121,12 @@ function initMap() {
 
 function toggleLabels(show) {
   if (show && !labelsLayer) {
-    // ESRI reference overlay with place names, borders, roads
-    labelsLayer = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-      { maxNativeZoom: 19, maxZoom: 22, pane: 'overlayPane' }
-    );
+    // Two ESRI reference overlays: streets/roads + place names/borders
+    const opts = { maxNativeZoom: 19, maxZoom: 22, pane: 'overlayPane' };
+    labelsLayer = L.layerGroup([
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', opts),
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', opts),
+    ]);
     labelsLayer.addTo(map);
   } else if (!show && labelsLayer) {
     map.removeLayer(labelsLayer);
@@ -230,8 +263,12 @@ function hideHeatmap() {
 // ─── Unified marker rendering (zoom ≥ 8) ──────────────────────────────────────
 
 function renderMarkers() {
-  markerLayer.clearLayers();
-  if (!superclusterIndex) return;
+  if (!superclusterIndex) { markerLayer.clearLayers(); return; }
+
+  // Double-buffer: build markers into a fresh layer, then swap.
+  // Old markers stay visible until new ones are in the DOM → no flicker.
+  const oldLayer = markerLayer;
+  markerLayer = L.layerGroup().addTo(map);
 
   const bounds = map.getBounds();
   const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
@@ -259,6 +296,10 @@ function renderMarkers() {
 
   // Sort lightbox navigation by date
   lightboxList.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  // Remove old layer now that new markers are in the DOM
+  oldLayer.clearLayers();
+  map.removeLayer(oldLayer);
 }
 
 /**
@@ -671,6 +712,104 @@ function isLightboxOpen() {
   return !document.getElementById('lightbox').classList.contains('hidden');
 }
 
+// ─── Gallery overlay ──────────────────────────────────────────────────────────
+
+let galleryPhotos = [];
+
+function isGalleryOpen() {
+  return !document.getElementById('gallery').classList.contains('hidden');
+}
+
+/**
+ * Collect all individual photos visible in the current map viewport.
+ * Expands clusters so every leaf photo is included.
+ */
+function getViewportPhotos() {
+  if (!superclusterIndex) return [];
+
+  const bounds = map.getBounds();
+  const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+  const zoom = Math.floor(map.getZoom());
+  const clusters = superclusterIndex.getClusters(bbox, zoom);
+
+  const photos = [];
+  for (const c of clusters) {
+    const props = c.properties;
+    if (props.cluster) {
+      const leaves = superclusterIndex.getLeaves(props.cluster_id, Infinity);
+      for (const leaf of leaves) photos.push(leaf.properties);
+    } else {
+      photos.push(props);
+    }
+  }
+
+  photos.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  return photos;
+}
+
+function openGallery() {
+  galleryPhotos = getViewportPhotos();
+  if (galleryPhotos.length === 0) return;
+
+  const grid = document.getElementById('gallery-grid');
+  const countEl = document.getElementById('gallery-count');
+  countEl.textContent = `${galleryPhotos.length.toLocaleString()} photo${galleryPhotos.length !== 1 ? 's' : ''} in view`;
+
+  let html = '';
+  for (let i = 0; i < galleryPhotos.length; i++) {
+    const p = galleryPhotos[i];
+    const thumbUrl = `cache://thumbnails/${p.id}_thumb.jpg`;
+    const isVideo = p.type === 'video';
+
+    let dateLabel = '';
+    if (p.date) {
+      const d = new Date(p.date);
+      dateLabel = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    html += `<div class="gallery-item" data-idx="${i}">` +
+      `<img src="${thumbUrl}" alt="" loading="lazy" />` +
+      (isVideo ? '<div class="gallery-video-badge">&#9654;</div>' : '') +
+      (dateLabel ? `<div class="gallery-date">${dateLabel}</div>` : '') +
+      '</div>';
+  }
+
+  grid.innerHTML = html;
+  grid.scrollTop = 0;
+
+  // Attach click handlers
+  grid.querySelectorAll('.gallery-item').forEach((el) => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.idx, 10);
+      lightboxList = galleryPhotos;
+      lightboxIndex = idx;
+      openLightboxAt(idx);
+    });
+  });
+
+  document.getElementById('gallery').classList.remove('hidden');
+}
+
+function closeGallery() {
+  document.getElementById('gallery').classList.add('hidden');
+  document.getElementById('gallery-grid').innerHTML = '';
+  galleryPhotos = [];
+}
+
+// ─── Help overlay ─────────────────────────────────────────────────────────────
+
+function isHelpOpen() {
+  return !document.getElementById('help').classList.contains('hidden');
+}
+
+function openHelp() {
+  document.getElementById('help').classList.remove('hidden');
+}
+
+function closeHelp() {
+  document.getElementById('help').classList.add('hidden');
+}
+
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 
 function updatePhotoCount(count) {
@@ -813,6 +952,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     toggleLabels(e.target.checked);
   });
 
+  // Help
+  document.getElementById('help-btn').addEventListener('click', openHelp);
+  document.getElementById('help-close').addEventListener('click', closeHelp);
+  document.getElementById('help-backdrop').addEventListener('click', closeHelp);
+
+  // Gallery
+  document.getElementById('gallery-btn').addEventListener('click', openGallery);
+  document.getElementById('gallery-close').addEventListener('click', closeGallery);
+  document.getElementById('gallery-backdrop').addEventListener('click', closeGallery);
+
   // Media filter
   document.getElementById('media-filter').addEventListener('change', (e) => {
     mediaFilter = e.target.value;
@@ -836,9 +985,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (isLightboxOpen()) { closeLightbox(); return; }
+      if (isHelpOpen()) { closeHelp(); return; }
+      if (isGalleryOpen()) { closeGallery(); return; }
+    }
     if (!isLightboxOpen()) return;
-    if (e.key === 'Escape') closeLightbox();
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); lightboxPrev(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); lightboxPrev(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); lightboxNext(); }
   });
 

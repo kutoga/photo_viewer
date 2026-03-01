@@ -9,7 +9,7 @@
  * - Supports photos (JPG, HEIC, PNG, TIFF, WebP) and videos (MP4, MOV, AVI, MKV, WebM)
  */
 
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu } = require('electron');
 const path = require('path');
 const fsp = require('fs/promises');
 const crypto = require('crypto');
@@ -95,6 +95,7 @@ app.whenReady().then(async () => {
     return net.fetch('file://' + absolutePath.replace(/\\/g, '/'));
   });
 
+  Menu.setApplicationMenu(null);
   createWindow();
 
   app.on('activate', () => {
