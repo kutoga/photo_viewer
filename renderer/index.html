@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photo Map</title>
+
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self' cache: file:;
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' cache: data: blob: https://*.arcgisonline.com;
+    media-src 'self' file: cache:;
+    connect-src 'self' https://*.arcgisonline.com;
+  " />
+
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Full-screen map -->
+  <div id="map"></div>
+
+  <!-- Control panel — top left overlay, collapsible -->
+  <div id="panel">
+    <div id="panel-header">
+      <span id="panel-title">Photo Map</span>
+      <button id="panel-toggle" aria-label="Collapse panel">&#x2212;</button>
+    </div>
+
+    <div id="panel-body">
+      <div id="folders-section">
+        <div id="folders-list"></div>
+        <div id="folders-actions">
+          <button id="add-folder-btn">+ Add Folder</button>
+          <button id="refresh-btn" class="hidden" title="Rescan all folders">&#x21bb;</button>
+        </div>
+      </div>
+
+      <!-- Progress (hidden when idle) -->
+      <div id="progress-section" class="hidden">
+        <div id="progress-track">
+          <div id="progress-fill"></div>
+        </div>
+        <span id="progress-label">Scanning…</span>
+      </div>
+
+      <!-- Photo count -->
+      <div id="stats-row">
+        <span id="photo-count"></span>
+      </div>
+
+      <!-- Map controls -->
+      <div id="map-controls">
+        <label id="labels-toggle">
+          <input type="checkbox" id="labels-check" />
+          <span>Show labels</span>
+        </label>
+        <select id="media-filter">
+          <option value="all">All media</option>
+          <option value="photo">Photos only</option>
+          <option value="video">Videos only</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox overlay -->
+  <div id="lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Photo preview">
+    <div id="lightbox-backdrop"></div>
+
+    <button id="lightbox-prev" class="lightbox-nav hidden" aria-label="Previous">&#x2039;</button>
+    <button id="lightbox-next" class="lightbox-nav hidden" aria-label="Next">&#x203a;</button>
+
+    <div id="lightbox-content">
+      <button id="lightbox-close" aria-label="Close">&times;</button>
+      <div id="lightbox-media">
+        <img id="lightbox-img" alt="Photo preview" />
+        <video id="lightbox-video" controls playsinline class="hidden"></video>
+        <button id="lightbox-play" class="hidden" aria-label="Play video">&#9654;</button>
+      </div>
+      <div id="lightbox-meta">
+        <span id="lightbox-counter" class="hidden"></span>
+        <span id="lightbox-date"></span>
+        <span id="lightbox-coords" class="lightbox-link"></span>
+        <span id="lightbox-filepath" class="lightbox-link"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vendor libraries -->
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/leaflet-heat.js"></script>
+  <script src="vendor/supercluster.js"></script>
+
+  <!-- App logic -->
+  <script src="app.js"></script>
+</body>
+</html>
