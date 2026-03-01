@@ -121,6 +121,9 @@ function initMap() {
       renderForZoom(); // Restore the cluster bubble that was hidden
     }
   });
+
+  // Labels on by default (matches the checked checkbox)
+  toggleLabels(true);
 }
 
 // ─── Labels layer toggle ──────────────────────────────────────────────────────
@@ -605,6 +608,7 @@ async function openLightboxAt(index) {
   const counterEl = document.getElementById('lightbox-counter');
   const playBtn = document.getElementById('lightbox-play');
   const isVideo = props.type === 'video';
+  const isAlreadyOpen = !lb.classList.contains('hidden');
 
   // ── Synchronous: show lightbox immediately with thumbnail ──────────────
   // Must happen BEFORE any await, otherwise debouncedRender() can rebuild
@@ -617,7 +621,12 @@ async function openLightboxAt(index) {
   playBtn.onclick = null;
 
   img.classList.remove('hidden');
-  img.src = `cache://thumbnails/${props.id}_thumb.jpg`;
+
+  // When navigating (lightbox already open), keep the old image visible
+  // while the new preview loads to avoid a flash of the tiny thumbnail.
+  if (!isAlreadyOpen) {
+    img.src = `cache://thumbnails/${props.id}_thumb.jpg`;
+  }
 
   if (props.date) {
     const d = new Date(props.date);
@@ -876,9 +885,9 @@ function updateDateSliderUI() {
   minLabel.textContent = formatSliderDate(dateFilterMin);
   maxLabel.textContent = formatSliderDate(dateFilterMax);
 
-  // Show reset button when range is narrowed
+  // Enable reset button only when range is narrowed
   const isNarrowed = dateFilterMin > dateSliderMin || dateFilterMax < dateSliderMax;
-  resetBtn.classList.toggle('hidden', !isNarrowed);
+  resetBtn.disabled = !isNarrowed;
 
   // Position the blue fill bar between the two thumbs
   const range = dateSliderMax - dateSliderMin;

@@ -897,8 +897,8 @@ html, body {
   justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-#date-reset-btn:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
-#date-reset-btn.hidden { display: none; }
+#date-reset-btn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
+#date-reset-btn:disabled { opacity: 0.25; cursor: default; }
 
 /* Slider track area */
 #date-track-wrap {
@@ -945,52 +945,61 @@ html, body {
   outline: none;
 }
 
-/* Webkit thumb */
+/* Webkit thumb — vertical bar handle */
 #date-range-min::-webkit-slider-thumb,
 #date-range-max::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 6px;
+  height: 22px;
   background: #fff;
   border: none;
-  border-radius: 50%;
-  cursor: grab;
+  border-radius: 3px;
+  cursor: ew-resize;
   pointer-events: auto;
   box-shadow:
     0 1px 4px rgba(0, 0, 0, 0.5),
-    0 0 0 2px rgba(59, 130, 246, 0.5);
-  transition: transform 0.1s, box-shadow 0.1s;
+    0 0 0 1.5px rgba(59, 130, 246, 0.45);
+  transition: background 0.1s, box-shadow 0.1s, width 0.1s;
 }
 #date-range-min::-webkit-slider-thumb:hover,
 #date-range-max::-webkit-slider-thumb:hover {
-  transform: scale(1.25);
+  background: #93c5fd;
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.4),
-    0 0 0 3px rgba(59, 130, 246, 0.6);
+    0 0 0 2px rgba(59, 130, 246, 0.6);
+  width: 8px;
 }
 #date-range-min::-webkit-slider-thumb:active,
 #date-range-max::-webkit-slider-thumb:active {
-  cursor: grabbing;
-  transform: scale(1.15);
+  background: #60a5fa;
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.4),
+    0 0 0 2.5px rgba(59, 130, 246, 0.7);
 }
 
-/* Firefox thumb */
+/* Firefox thumb — vertical bar handle */
 #date-range-min::-moz-range-thumb,
 #date-range-max::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 6px;
+  height: 22px;
   background: #fff;
   border: none;
-  border-radius: 50%;
-  cursor: grab;
+  border-radius: 3px;
+  cursor: ew-resize;
   pointer-events: auto;
   box-shadow:
     0 1px 4px rgba(0, 0, 0, 0.5),
-    0 0 0 2px rgba(59, 130, 246, 0.5);
+    0 0 0 1.5px rgba(59, 130, 246, 0.45);
+}
+#date-range-min::-moz-range-thumb:hover,
+#date-range-max::-moz-range-thumb:hover {
+  background: #93c5fd;
 }
 #date-range-min::-moz-range-thumb:active,
-#date-range-max::-moz-range-thumb:active { cursor: grabbing; }
+#date-range-max::-moz-range-thumb:active {
+  background: #60a5fa;
+}
 
 /* Hide default track */
 #date-range-min::-webkit-slider-runnable-track,
