@@ -66,8 +66,14 @@ function initMap() {
   markerLayer = L.layerGroup().addTo(map);
   spiderLayer = L.layerGroup().addTo(map);
 
-  map.on('zoomend moveend', () => {
+  map.on('zoomend', () => {
     clearSpider();
+    debouncedRender();
+  });
+
+  map.on('moveend', () => {
+    // Don't clear spider on pan — it stays positioned correctly as a marker.
+    // Only zoom changes and explicit map clicks should close it.
     debouncedRender();
   });
 
@@ -250,6 +256,9 @@ function renderMarkers() {
 
   // Find overlapping groups via Union-Find then render
   renderGroupedSingles(singles, photoSize);
+
+  // Sort lightbox navigation by date
+  lightboxList.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 }
 
 /**
@@ -411,7 +420,8 @@ function spiderfyCluster(centerLat, centerLng, clusterId, clusterMarker) {
   const leaves = superclusterIndex.getLeaves(clusterId, Infinity);
   if (leaves.length === 0) return;
 
-  const spiderPhotos = leaves.map((l) => l.properties);
+  const spiderPhotos = leaves.map((l) => l.properties)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const count = leaves.length;
   const thumbSize = 52;
   const gap = 14;
@@ -450,7 +460,7 @@ function spiderfyCluster(centerLat, centerLng, clusterId, clusterMarker) {
       const left = Math.round(cx + Math.cos(angle) * ring.radius - thumbSize / 2);
       const top  = Math.round(cy + Math.sin(angle) * ring.radius - thumbSize / 2);
 
-      const props = leaves[itemIdx].properties;
+      const props = spiderPhotos[itemIdx];
       const thumbUrl = `cache://thumbnails/${props.id}_thumb.jpg`;
       const isVideo = props.type === 'video';
 
@@ -465,27 +475,31 @@ function spiderfyCluster(centerLat, centerLng, clusterId, clusterMarker) {
 
   const icon = L.divIcon({
     className: 'spider-container',
-    html: `<div style="position:relative;width:${containerSize}px;height:${containerSize}px">${thumbsHtml}</div>`,
+    html: `<div style="position:relative;width:${containerSize}px;height:${containerSize}px;pointer-events:none">${thumbsHtml}</div>`,
     iconSize: [containerSize, containerSize],
     iconAnchor: [cx, cy],
   });
 
-  const overlay = L.marker([centerLat, centerLng], { icon, zIndexOffset: 1000, bubblingMouseEvents: false });
+  const overlay = L.marker([centerLat, centerLng], { icon, zIndexOffset: 1000 });
   spiderLayer.addLayer(overlay);
 
-  // Event delegation: clicks on thumbnails open lightbox, clicks on empty space close spider
-  overlay.on('click', (e) => {
-    const thumb = e.originalEvent.target.closest('.spider-thumb');
-    if (thumb) {
-      const idx = parseInt(thumb.dataset.idx, 10);
-      lightboxList = spiderPhotos;
-      lightboxIndex = idx;
-      openLightboxAt(idx);
-    } else {
-      clearSpider();
-      renderForZoom();
-    }
-  });
+  // Attach click listeners directly to each thumbnail DOM element.
+  // The container has pointer-events:none so gaps between thumbnails
+  // pass through to the map, which closes the spider naturally.
+  const container = overlay.getElement();
+  if (container) {
+    container.style.pointerEvents = 'none';
+    container.querySelectorAll('.spider-thumb').forEach((el) => {
+      el.style.pointerEvents = 'auto';
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(el.dataset.idx, 10);
+        lightboxList = spiderPhotos;
+        lightboxIndex = idx;
+        openLightboxAt(idx);
+      });
+    });
+  }
 }
 
 // ─── Single photo/video marker ────────────────────────────────────────────────
