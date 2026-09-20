@@ -7,6 +7,9 @@ class PhotoAtlas {
     this.items = new Map();
     this.markers = new Map();
     this.version = 0;
+    this.renderedVersion = 0;
+    this.selection = 0;
+    this.deferredItems = null;
     this.readyVersion = 0;
     this.request = 0;
     this.leaves = new Map();
@@ -35,11 +38,11 @@ class PhotoAtlas {
     this.labels = L.layerGroup([
       L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-        { maxNativeZoom: 19, maxZoom: 22 },
+        { maxNativeZoom: 19, maxZoom: 22, opacity: 0.85 },
       ),
       L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-        { maxNativeZoom: 19, maxZoom: 22 },
+        { maxNativeZoom: 19, maxZoom: 22, opacity: 0.45 },
       ),
     ]).addTo(this.map);
     this.tiles.on('tileerror', () => {
@@ -78,7 +81,10 @@ class PhotoAtlas {
     );
   }
   setItems(items) {
-    this.items = new Map(items.map((p) => [p.id, p]));
+    if (document.getElementById('map-view').hidden) {
+      this.deferredItems = items;
+      return;
+    }
     this.heat.setLatLngs(items.map((p) => [p.lat, p.lng, 1]));
     this.clearSpider();
     if (this.loadBusy) {
@@ -88,10 +94,12 @@ class PhotoAtlas {
     this.load(items);
   }
   load(items) {
+    this.items = new Map(items.map((p) => [p.id, p]));
     this.loadBusy = true;
     this.worker.postMessage({
       type: 'load',
       version: ++this.version,
+      keepVersion: this.renderedVersion,
       points: items.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng })),
     });
   }
@@ -108,16 +116,14 @@ class PhotoAtlas {
       data.type === 'clusters' &&
       data.version === this.version &&
       data.request === this.queryRequest
-    )
+    ) {
       this.render(data.clusters);
-    else if (data.type === 'leaves') {
+      this.renderedVersion = data.version;
+      this.worker.postMessage({ type: 'retain', versions: [this.version, this.renderedVersion] });
+    } else if (data.type === 'leaves') {
       const resolve = this.leaves.get(data.request);
       this.leaves.delete(data.request);
-      resolve?.(
-        data.version === this.version
-          ? data.ids.map((id) => this.items.get(id)).filter(Boolean)
-          : [],
-      );
+      resolve?.(data.ids);
     } else if (data.type === 'error') {
       this.leaves.get(data.request)?.([]);
       this.leaves.delete(data.request);
@@ -125,11 +131,28 @@ class PhotoAtlas {
       this.onError(data.error);
     }
   }
+  resume() {
+    this.map.invalidateSize({ pan: false });
+    if (this.deferredItems) {
+      const items = this.deferredItems;
+      this.deferredItems = null;
+      this.setItems(items);
+    }
+    if (this.fitWhenVisible) {
+      this.fitWhenVisible = false;
+      this.fit();
+    }
+    this.query();
+  }
   bounds() {
     const b = this.map.getBounds();
     return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
   }
   fit() {
+    if (document.getElementById('map-view').hidden) {
+      this.fitWhenVisible = true;
+      return;
+    }
     const points = [...this.items.values()].map((p) => [p.lat, p.lng]);
     if (points.length)
       this.map.fitBounds(L.latLngBounds(points), {
@@ -154,6 +177,7 @@ class PhotoAtlas {
     if (zoom < 8) {
       this.layer.clearLayers();
       this.markers.clear();
+      this.renderedVersion = 0;
       this.clearSpider();
       if (this.items.size) {
         if (!this.map.hasLayer(this.heat)) this.heat.addTo(this.map);
@@ -196,25 +220,44 @@ class PhotoAtlas {
       const [lng, lat] = cluster.geometry.coordinates;
       let marker;
       if (p.cluster) {
-        const size = Math.min(52, 31 + Math.log(p.point_count) * 3);
+        const size = Math.round(Math.min(58, 35 + Math.log(p.point_count) * 3));
         marker = L.marker([lat, lng], {
           icon: L.divIcon({
-            className: '',
+            className: 'cluster-marker',
             html: `<div class="cluster-pin" style="width:${size}px;height:${size}px">${p.point_count_abbreviated}</div>`,
             iconSize: [size, size],
             iconAnchor: [size / 2, size / 2],
           }),
           title: `Explore ${p.point_count} memories`,
           keyboard: true,
+          autoPanOnFocus: false,
+          riseOnHover: true,
+          zIndexOffset: 100,
         });
+        const clusterVersion = this.version;
+        const records = this.items;
         marker.on('click', async () => {
+          const selection = ++this.selection;
+          this.markers.forEach((m) => m.getElement()?.classList.remove('is-selected'));
+          const element = marker.getElement();
+          element?.classList.add('is-loading', 'is-selected');
+          element?.setAttribute('aria-busy', 'true');
           const request = ++this.request;
-          const items = await new Promise((resolve) => {
+          const ids = await new Promise((resolve) => {
             this.leaves.set(request, resolve);
-            this.worker.postMessage({ type: 'leaves', id: p.cluster_id, request });
+            this.worker.postMessage({
+              type: 'leaves',
+              id: p.cluster_id,
+              version: clusterVersion,
+              request,
+            });
           });
+          element?.classList.remove('is-loading');
+          element?.removeAttribute('aria-busy');
+          if (selection !== this.selection) return;
+          const items = ids.map((id) => records.get(id)).filter(Boolean);
           if (!items.length) return;
-          this.onArea(items, 'A place to remember');
+          this.onArea(items, 'Photos at this location');
           if (items.length <= 24) this.spiderfy(items, [lat, lng]);
         });
       } else marker = this.photoMarker(entry, [lat, lng], 48, () => this.onPhoto(entry.id));
@@ -276,6 +319,11 @@ class PhotoAtlas {
       }).addTo(this.spider);
       this.photoMarker(entry, pos, 48, () => this.onPhoto(entry.id, items)).addTo(this.spider);
     });
+  }
+  cancelSelection() {
+    this.selection++;
+    this.markers.forEach((marker) => marker.getElement()?.classList.remove('is-selected'));
+    this.clearSpider();
   }
   clearSpider() {
     this.spider.clearLayers();

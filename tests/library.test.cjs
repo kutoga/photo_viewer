@@ -106,3 +106,17 @@ test('version 1 metadata and folders are loaded without rescanning', async (t) =
   assert.equal(lib.snapshot().items[0].id, id);
   assert.equal(lib.dirs[0], source);
 });
+
+test('folder removal accepts the same aliased path used when adding it', async (t) => {
+  const { root, source, nested, lib } = await fixture(t);
+  await fs.writeFile(path.join(source, 'remove.jpg'), 'remove');
+  await fs.writeFile(path.join(nested, 'keep.jpg'), 'keep');
+  const alias = path.join(root, 'photos-alias');
+  await fs.symlink(source, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  await lib.addFolders([alias, nested]);
+  await lib.startScan();
+  await lib.removeFolder(alias);
+  assert.equal(lib.entries.size, 1);
+  assert.equal([...lib.entries.values()][0].filename, 'keep.jpg');
+  assert.equal(lib.dirs.length, 1);
+});

@@ -16,6 +16,50 @@ const state = {
   firstScan: false,
 };
 let atlas, gallery, areaGallery, filterTimer, toastTimer, removeTarget, previewTimer;
+let catalog,
+  filterRequest = 0,
+  filterBusy = false,
+  pendingFilter = null,
+  filterOptions;
+function sendFilter(options) {
+  filterBusy = true;
+  filterOptions = options;
+  catalog.postMessage({
+    type: 'filter',
+    request: ++filterRequest,
+    filters: state.filters,
+    sort: state.sort,
+  });
+}
+function initCatalog() {
+  catalog = new Worker('library-worker.js');
+  catalog.onerror = () => {
+    filterBusy = false;
+    error('The library could not be refreshed. Restart Photo Map.');
+  };
+  catalog.onmessage = ({ data }) => {
+    if (data.type === 'error') {
+      filterBusy = false;
+      error(data.error);
+      return;
+    }
+    if (data.type !== 'filtered' || data.request !== filterRequest) return;
+    filterBusy = false;
+    if (pendingFilter) {
+      const options = pendingFilter;
+      pendingFilter = null;
+      sendFilter(options);
+      return;
+    }
+    state.filtered = data.ids.map((id) => state.items.get(id)).filter(Boolean);
+    state.dates = data.dates;
+    atlas.setItems(state.filtered);
+    updateDates();
+    updateSummary();
+    if (state.view === 'gallery') gallery.setItems(state.filtered, filterOptions.resetGallery);
+    if (filterOptions.fit && state.items.size) atlas.fit();
+  };
+}
 const count = (value) => Number(value).toLocaleString();
 function error(message) {
   $('error-text').textContent = message;
@@ -41,10 +85,10 @@ function snapshot(data, fit = false) {
   state.items = new Map(data.items.map((p) => [p.id, p]));
   state.folders = data.folders;
   state.summary = data.summary;
+  catalog.postMessage({ type: 'replace', items: data.items });
   renderFolders();
-  applyFilters();
+  applyFilters({ fit });
   if (data.scan) progress(data.scan);
-  if (fit && state.items.size) atlas.fit();
 }
 function renderFolders() {
   const list = $('folder-list');
@@ -128,25 +172,27 @@ function isFiltered() {
   const f = state.filters;
   return f.type !== 'all' || f.search || f.folder || f.from || f.to;
 }
-function applyFilters({ resetGallery = true } = {}) {
+function applyFilters({ resetGallery = true, fit = false } = {}) {
   clearTimeout(filterTimer);
   filterTimer = null;
-  state.filtered = PhotoModel.sort(
-    PhotoModel.filter([...state.items.values()], state.filters),
-    state.sort,
-  );
-  atlas.setItems(state.filtered);
-  updateDates();
-  updateSummary();
-  if (state.view === 'gallery') gallery.setItems(state.filtered, resetGallery);
   if (resetGallery) closeArea();
+  const options = { resetGallery, fit: fit || (filterOptions?.fit && filterBusy) };
+  if (filterBusy) {
+    pendingFilter = {
+      resetGallery: resetGallery || pendingFilter?.resetGallery,
+      fit: options.fit || pendingFilter?.fit,
+    };
+  } else sendFilter(options);
 }
 function scheduleFilters() {
   if (!filterTimer)
-    filterTimer = setTimeout(() => {
-      filterTimer = null;
-      applyFilters({ resetGallery: false });
-    }, 600);
+    filterTimer = setTimeout(
+      () => {
+        filterTimer = null;
+        applyFilters({ resetGallery: false });
+      },
+      state.scanning ? 2000 : 300,
+    );
 }
 function resetFilters() {
   state.filters = { type: 'all', search: '', folder: '', from: '', to: '' };
@@ -184,11 +230,7 @@ function setView(view) {
     ? 'Bring your photos together. Rediscover where you’ve been.'
     : 'All your geotagged memories, together in one place.';
   closeArea();
-  if (mapView)
-    requestAnimationFrame(() => {
-      atlas.map.invalidateSize();
-      atlas.query();
-    });
+  if (mapView) requestAnimationFrame(() => atlas.resume());
   else gallery.setItems(state.filtered);
 }
 function showArea(items, title = 'Photos in this area') {
@@ -204,7 +246,7 @@ function closeArea() {
   $('area-panel').hidden = true;
   state.area = [];
   areaGallery?.setItems([]);
-  atlas?.clearSpider();
+  atlas?.cancelSelection();
 }
 function dateNumber(date) {
   return Date.parse(date + 'T00:00:00Z') / 86400000;
@@ -213,7 +255,6 @@ function numberDate(number) {
   return new Date(number * 86400000).toISOString().slice(0, 10);
 }
 function updateDates() {
-  state.dates = PhotoModel.dateBounds([...state.items.values()]);
   const { min, max } = state.dates;
   const enabled = Boolean(min && max);
   for (const id of ['date-from', 'date-to', 'range-from', 'range-to']) $(id).disabled = !enabled;
@@ -263,6 +304,7 @@ function changeDate(which, value) {
 function setScanning(scanning) {
   state.scanning = scanning;
   $('scan-panel').hidden = !scanning;
+  $('map-import-status').hidden = !scanning;
   document.querySelectorAll('[data-add-folder], .folder-remove').forEach((button) => {
     button.disabled = scanning;
   });
@@ -275,6 +317,7 @@ function progress(data) {
   if (!state.scanning) setScanning(true);
   $('scan-title').textContent = 'Finding your memories…';
   $('scan-detail').textContent = data.currentFile || 'Exploring folders and checking for changes';
+  $('map-import-status').textContent = `Importing · ${count(data.processed)} checked`;
   $('scan-count').textContent = `${count(data.processed)} checked · ${count(data.added)} new`;
   $('status-text').textContent = 'Scanning in the background · You can keep exploring';
 }
@@ -395,7 +438,26 @@ function viewerError(message) {
   $('viewer-error').textContent = message;
   $('viewer-error').hidden = false;
 }
+async function toggleFullscreen() {
+  if (document.fullscreenElement) await document.exitFullscreen();
+  else {
+    if (state.view !== 'map') setView('map');
+    await document.documentElement.requestFullscreen();
+  }
+}
+function updateFullscreen() {
+  const active = Boolean(document.fullscreenElement);
+  document.body.classList.toggle('map-fullscreen', active);
+  $('map-fullscreen').setAttribute('aria-pressed', String(active));
+  $('map-fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Fullscreen map');
+  $('map-fullscreen').title = active ? 'Exit fullscreen (Esc or F11)' : 'Fullscreen map (F11)';
+  $('fullscreen-label').textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+  $('fullscreen-icon').innerHTML = icon(active ? 'minimize' : 'maximize');
+  requestAnimationFrame(() => atlas.resume());
+}
 function setupEvents() {
+  $('map-fullscreen').addEventListener('click', () => attempt(toggleFullscreen));
+  document.addEventListener('fullscreenchange', updateFullscreen);
   document
     .querySelectorAll('[data-add-folder]')
     .forEach((button) => button.addEventListener('click', addFolders));
@@ -442,8 +504,7 @@ function setupEvents() {
   $('clear-empty-filters').addEventListener('click', resetFilters);
   $('sort-order').addEventListener('change', (e) => {
     state.sort = e.target.value;
-    state.filtered = PhotoModel.sort(state.filtered, state.sort);
-    gallery.setItems(state.filtered);
+    applyFilters();
   });
   $('date-from').addEventListener('change', (e) => changeDate('from', e.target.value));
   $('date-to').addEventListener('change', (e) => changeDate('to', e.target.value));
@@ -507,6 +568,11 @@ function setupEvents() {
     $('error-banner').hidden = true;
   });
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'F11') {
+      e.preventDefault();
+      if (!e.repeat) attempt(toggleFullscreen);
+      return;
+    }
     if ($('lightbox').open) {
       if (e.target === $('viewer-video')) return;
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -515,11 +581,17 @@ function setupEvents() {
       }
       return;
     }
-    if (document.querySelector('dialog[open]') || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))
+    if (document.querySelector('dialog[open]')) return;
+    if (e.key === 'Escape' && document.fullscreenElement) {
+      e.preventDefault();
+      attempt(() => document.exitFullscreen());
       return;
+    }
+    if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === '/') {
       e.preventDefault();
-      $('search').focus();
+      if (document.fullscreenElement) document.exitFullscreen().then(() => $('search').focus());
+      else $('search').focus();
     }
     if (e.key.toLowerCase() === 'f') atlas.fit();
     if (e.key === 'Escape') closeArea();
@@ -530,6 +602,9 @@ function setupEvents() {
       if (PhotoModel.hasGPS(p)) state.items.set(p.id, p);
       else state.items.delete(p.id);
     }
+    catalog.postMessage({ type: 'changes', upsert, remove });
+    // Counts are cheap to update; sorting and spatial rebuilding are batched.
+    $('located-total').textContent = count(state.items.size);
     scheduleFilters();
   });
   api.onProgress(progress);
@@ -538,8 +613,7 @@ function setupEvents() {
     state.folders = data.folders;
     setScanning(false);
     renderFolders();
-    applyFilters({ resetGallery: false });
-    if (state.firstScan && state.items.size) atlas.fit();
+    applyFilters({ resetGallery: false, fit: state.firstScan });
     const cancelled = data.phase === 'cancelled';
     $('status-text').textContent = cancelled
       ? 'Scan stopped · Progress saved'
@@ -561,6 +635,7 @@ function setupEvents() {
   });
 }
 async function init() {
+  initCatalog();
   atlas = new PhotoAtlas({ onPhoto: photoById, onArea: showArea, onError: error });
   gallery = new VirtualGallery($('gallery-scroll'), $('gallery-space'), openViewer);
   areaGallery = new VirtualGallery($('area-scroll'), $('area-space'), openViewer, true);

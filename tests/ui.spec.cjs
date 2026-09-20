@@ -220,3 +220,126 @@ test('map visual review at desktop size', async ({ page }) => {
   await page.screenshot({ path: 'test-results/map.png' });
   expect(errors).toEqual([]);
 });
+
+test('cluster near the map edge opens with one physical click', async ({ page }) => {
+  const errors = await setup(page);
+  await page.evaluate(() => {
+    atlas.map.setView([47.4, 9.6], 12, { animate: false });
+    const position = atlas.map.containerPointToLatLng([6, 200]);
+    atlas.setItems(
+      window.__snapshot.items
+        .slice(0, 3)
+        .map((p) => ({ ...p, lat: position.lat, lng: position.lng })),
+    );
+  });
+  await expect(page.locator('.cluster-pin')).toHaveCount(1);
+  const center = await page.locator('.cluster-pin').evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.click(center.x, center.y);
+  await expect(page.locator('#area-panel')).toBeVisible();
+  await expect(page.locator('#area-count')).toHaveText('3 memories to rediscover');
+  expect(errors).toEqual([]);
+});
+
+test('a visible cluster keeps its own members while a newer index is loading', async ({ page }) => {
+  const errors = await setup(page);
+  const expected = await page.evaluate(async () => {
+    const marker = [...atlas.markers.entries()].find(([key]) => key.startsWith('c'))[1];
+    const count = Number(marker.getElement().textContent);
+    // Hold the displayed markers while a new index containing different clusters is built.
+    atlas.query = () => {};
+    atlas.setItems(window.__snapshot.items.slice(0, 6));
+    await new Promise((resolve) => {
+      const poll = () => (atlas.loadBusy ? setTimeout(poll, 10) : resolve());
+      poll();
+    });
+    marker.fire('click');
+    return count;
+  });
+  await expect(page.locator('#area-panel')).toBeVisible();
+  await expect(page.locator('#area-count')).toHaveText(`${expected} memories to rediscover`);
+  expect(errors).toEqual([]);
+});
+
+test('fullscreen map uses the entire window and exits with its button, Escape, and F11', async ({
+  page,
+}) => {
+  const errors = await setup(page);
+  await page.getByRole('button', { name: 'Fullscreen map', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+  await expect(page.locator('.sidebar')).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const rect = document.getElementById('map').getBoundingClientRect();
+        return (
+          Math.round(rect.width) === innerWidth &&
+          Math.round(rect.height) === innerHeight &&
+          rect.x === 0 &&
+          rect.y === 0
+        );
+      }),
+    )
+    .toBe(true);
+  await page.getByRole('button', { name: 'Browse this area' }).click();
+  await page.locator('#area-scroll .gallery-card').first().click();
+  await expect(page.locator('#lightbox')).toBeVisible();
+  await page.getByRole('button', { name: 'Close viewer', exact: true }).click();
+  await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
+  await expect(page.locator('.sidebar')).toBeVisible();
+  await page.keyboard.press('F11');
+  await expect(page.locator('body')).toHaveClass(/map-fullscreen/);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).not.toHaveClass(/map-fullscreen/);
+  await page.keyboard.press('F11');
+  await expect(page.locator('body')).toHaveClass(/map-fullscreen/);
+  await page.keyboard.press('F11');
+  await expect(page.locator('.sidebar')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('library sorting stays off the UI thread and map rebuilding pauses in gallery during import', async ({
+  page,
+}) => {
+  const errors = await setup(page, 50000);
+  await page.getByRole('button', { name: 'Gallery', exact: true }).click();
+  const version = await page.evaluate(() => atlas.version);
+  await page.evaluate(() => {
+    // Regression guard: bulk library operations must execute in the worker, not this thread.
+    PhotoModel.filter =
+      PhotoModel.sort =
+      PhotoModel.dateBounds =
+        () => {
+          throw new Error('Bulk library work ran on the UI thread');
+        };
+    window.__events.progress({ processed: 50000, added: 0 });
+    window.__batch = 0;
+    window.__import = setInterval(() => {
+      const batch = ++window.__batch;
+      window.__events.changes({
+        upsert: Array.from({ length: 100 }, (_, i) => ({
+          ...window.__snapshot.items[i],
+          id: (50000 + batch * 100 + i).toString(16).padStart(32, '0'),
+        })),
+        remove: [],
+      });
+    }, 100);
+  });
+  await page.locator('#search').fill('Summer days');
+  await expect(page.locator('#visible-count')).not.toHaveText('50,000');
+  await page.locator('#gallery-scroll .gallery-card').first().click();
+  await expect(page.locator('#lightbox')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#viewer-position')).toContainText('2 /');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Stop scan' }).click();
+  await page.evaluate(() => clearInterval(window.__import));
+  await expect(page.locator('#scan-panel')).toBeHidden();
+  expect(await page.evaluate(() => atlas.version)).toBe(version);
+  expect(await page.locator('#gallery-scroll .gallery-card').count()).toBeLessThan(60);
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => atlas.version)).toBeGreaterThan(version);
+  expect(errors).toEqual([]);
+});

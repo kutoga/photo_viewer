@@ -1980,3 +1980,168 @@ kbd {
 .glass {
   font-size: 11px;
 }
+/* Focused map workspace. Native fullscreen removes the window chrome too. */
+.map-fullscreen .sidebar,
+.map-fullscreen .topbar,
+.map-fullscreen .view-heading,
+.map-fullscreen .timeline,
+.map-fullscreen .statusbar,
+.map-fullscreen .scan-panel {
+  display: none;
+}
+.map-fullscreen .app-shell {
+  display: block;
+}
+.map-fullscreen .explorer {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  z-index: 1000;
+}
+.map-fullscreen .error-banner {
+  position: fixed;
+  left: 20px;
+  right: 20px;
+  bottom: 60px;
+  z-index: 1100;
+  box-shadow: 0 4px 24px #172a3333;
+}
+.map-fullscreen .map-toolbar {
+  top: 24px;
+  left: 24px;
+}
+.map-fullscreen .map-controls {
+  right: 24px;
+  bottom: 64px;
+}
+.map-toolbar {
+  border: 1px solid #ffffffc0;
+  background: #fffffff2;
+  padding: 7px 12px;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px #122b3b28;
+  backdrop-filter: blur(16px);
+  gap: 10px;
+}
+.map-button {
+  padding: 7px 6px;
+  border-radius: 5px;
+  font-weight: 550;
+}
+.map-button:hover:not(:disabled) {
+  background: #f2e9e0;
+}
+.map-button svg {
+  width: 15px;
+  height: 15px;
+}
+.map-import-status {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  z-index: 450;
+  padding: 12px 14px;
+  border-radius: 9px;
+  color: #e6efe8;
+  background: #233f35ed;
+  box-shadow: 0 4px 16px #172c3826;
+  font-size: 11px;
+  pointer-events: none;
+}
+.map-import-status::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #bbd7b6;
+  margin-right: 8px;
+}
+.map-fullscreen .map-import-status {
+  top: 24px;
+  right: 24px;
+}
+.cluster-pin {
+  border-width: 3px;
+  background: #b96647;
+  box-shadow:
+    0 3px 12px #152c3b66,
+    inset 0 1px 0 #ffffff35;
+  font-size: 13px;
+  letter-spacing: -0.3px;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.cluster-pin:hover {
+  transform: none;
+  background: #9e5035;
+  box-shadow:
+    0 0 0 4px #ffffff50,
+    0 5px 15px #152c3b55;
+}
+.cluster-marker.is-selected .cluster-pin {
+  background: #2d5749;
+  box-shadow:
+    0 0 0 5px #ffffff60,
+    0 5px 16px #152c3b66;
+}
+.cluster-marker:focus-visible {
+  outline: 0;
+}
+.cluster-marker:focus-visible .cluster-pin {
+  box-shadow:
+    0 0 0 5px #e8d5a4,
+    0 3px 12px #152c3b55;
+}
+.cluster-marker.is-loading::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid transparent;
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  pointer-events: none;
+}
+.photo-pin {
+  border-radius: 9px;
+  box-shadow: 0 4px 14px #11293966;
+}
+.photo-pin img {
+  border-radius: 6px;
+}
+.area-heading {
+  background: #fafbf8;
+  padding-top: 25px;
+  padding-bottom: 20px;
+}
+.area-heading .eyebrow {
+  color: #7d9285;
+}
+.area-heading h2 {
+  font-size: 17px;
+  letter-spacing: -0.4px;
+}
+.area-panel {
+  box-shadow: -12px 0 40px #112b3626;
+}
+.browse-area {
+  padding: 12px 17px;
+  border: 1px solid #ffffffc0;
+  border-radius: 9px;
+  background: #fffffff2;
+  box-shadow: 0 4px 18px #142b363b;
+  font-weight: 550;
+  backdrop-filter: blur(16px);
+}
+@media (max-width: 1100px) {
+  .map-toolbar .map-indicator {
+    display: none;
+  }
+  .map-import-status {
+    top: 77px;
+  }
+}

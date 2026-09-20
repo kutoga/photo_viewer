@@ -80,6 +80,17 @@ const root = path.join(__dirname, '..');
     await page.getByRole('button', { name: 'Choose your first folder' }).click();
     await expect(page.locator('#located-total')).toHaveText('14', { timeout: 45000 });
     await expect(page.locator('#scan-panel')).toBeHidden({ timeout: 45000 });
+    await page.getByRole('button', { name: 'Fullscreen map', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    await expect(page.locator('.sidebar')).toBeHidden();
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()),
+      )
+      .toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.sidebar')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(false);
     const cache = path.join(userData, 'photo-map-cache');
     const previews = path.join(cache, 'previews');
     if ((await fs.readdir(previews)).length)
@@ -134,7 +145,7 @@ const root = path.join(__dirname, '..');
     await page.screenshot({ path: path.join(root, 'test-results/desktop-linux.png') });
     if (errors.length) throw new Error(errors.join('\n'));
     console.log(
-      'Desktop smoke passed: native picker IPC, scan, GPS, worker threads, preview protocol, video loading/seeking, gallery, and unchanged rescan.',
+      'Desktop smoke passed: native picker IPC, scan, GPS, worker threads, preview protocol, video loading/seeking, native fullscreen, gallery, and unchanged rescan.',
     );
   } finally {
     if (app) await app.close();

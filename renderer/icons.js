@@ -1,5 +1,7 @@
 'use strict';
 const icons = {
+  maximize: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
+  minimize: '<path d="M3 8h5V3m8 0v5h5M8 21v-5H3m18 0h-5v5"/>',
   aperture:
     '<circle cx="12" cy="12" r="9"/><path d="m14.3 3.3 3.4 5.9-3.4 5.9H7.5L4.1 9.2M21 12H14.3l-3.4 5.9 3.4 3M7.5 20l3.4-5.9L7.5 8.2 10 3"/>',
   map: '<path d="m9 18-6 3V6l6-3 6 3 6-3v15l-6 3-6-3Zm0-15v15m6-12v15"/>',

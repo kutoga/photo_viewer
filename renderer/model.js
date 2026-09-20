@@ -56,10 +56,10 @@
     lng += 360 * Math.round(((west + east) / 2 - lng) / 360);
     return p.lat >= south && p.lat <= north && (east - west >= 360 || (lng >= west && lng <= east));
   }
+  const names = new Intl.Collator(undefined, { numeric: true });
   function sort(items, order = 'newest') {
     return [...items].sort((a, b) => {
-      if (order === 'name')
-        return a.filename.localeCompare(b.filename, undefined, { numeric: true });
+      if (order === 'name') return names.compare(a.filename, b.filename);
       if (!a.date && b.date) return 1;
       if (a.date && !b.date) return -1;
       const cmp =

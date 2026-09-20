@@ -19,8 +19,8 @@ npm run build:win
 
 Outputs:
 
-- `dist/Photo Map Setup 2.0.0.exe`: per-user installer with a destination picker and desktop shortcut.
-- `dist/Photo Map 2.0.0.exe`: portable launcher; application data still lives in the user's profile.
+- `dist/Photo Map Setup 2.0.1.exe`: per-user installer with a destination picker and desktop shortcut.
+- `dist/Photo Map 2.0.1.exe`: portable launcher; application data still lives in the user's profile.
 
 No Node installation is needed to run these executables. Builds are unsigned unless a signing certificate is configured in electron-builder; Windows may display its usual reputation prompt for an unsigned download.
 
@@ -43,14 +43,14 @@ npm run build:linux
 Run the AppImage:
 
 ```sh
-chmod +x 'dist/Photo Map-2.0.0.AppImage'
-'./dist/Photo Map-2.0.0.AppImage'
+chmod +x 'dist/Photo Map-2.0.1.AppImage'
+'./dist/Photo Map-2.0.1.AppImage'
 ```
 
 If the distribution does not have FUSE 2 support, use the AppImage's `--appimage-extract-and-run` option, or install the Debian package:
 
 ```sh
-sudo apt install ./dist/photo-map_2.0.0_amd64.deb
+sudo apt install ./dist/photo-map_2.0.1_amd64.deb
 ```
 
 The Debian package declares desktop runtime dependencies and installs a launcher/icon. On Ubuntu versions restricting unprivileged user namespaces, prefer the installed package and its Electron sandbox configuration. The production launcher does not disable Chromium's sandbox.

@@ -120,3 +120,28 @@ test('atomic persistence and streaming walk preserve originals and skip unsuppor
   await fs.writeFile(path.join(dir, 'broken.json'), '{');
   await assert.rejects(readJSON(path.join(dir, 'broken.json'), []), /Could not read/);
 });
+
+test('large checkpoints yield to the event loop and keep the last good file on failure', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'photo-map-save-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'metadata.json');
+  const entries = Array.from({ length: 12000 }, (_, id) => ({
+    id,
+    filename: `Photo ${id}.jpg`,
+    path: 'a'.repeat(300),
+  }));
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 0);
+  try {
+    await atomicWrite(file, entries);
+  } finally {
+    clearInterval(timer);
+  }
+  assert.ok(ticks > 1, 'checkpoint should yield while writing batches');
+  assert.deepEqual(await readJSON(file), entries);
+  const circular = {};
+  circular.self = circular;
+  await assert.rejects(atomicWrite(file, [...entries.slice(0, 1000), circular]));
+  assert.deepEqual(await readJSON(file), entries);
+  assert.deepEqual(await fs.readdir(dir), ['metadata.json']);
+});

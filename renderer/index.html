@@ -81,7 +81,7 @@
         <div class="sidebar-footer">
           <button id="help-open" class="quiet-button">
             <span data-icon="help"></span>Help & shortcuts</button
-          ><span class="version">v2.0</span>
+          ><span class="version">v2.0.1</span>
         </div>
       </aside>
       <main class="workspace">
@@ -150,6 +150,20 @@
                 ><input type="checkbox" id="show-labels" checked /><span data-icon="layers"></span
                 >Labels</label
               >
+              <div class="toolbar-divider"></div>
+              <button
+                id="map-fullscreen"
+                class="map-button"
+                aria-label="Fullscreen map"
+                aria-pressed="false"
+                title="Fullscreen map (F11)"
+              >
+                <span id="fullscreen-icon" data-icon="maximize"></span
+                ><span id="fullscreen-label">Fullscreen</span>
+              </button>
+            </div>
+            <div class="map-import-status" id="map-import-status" hidden role="status">
+              Importing…
             </div>
             <div id="map-offline" class="map-offline" hidden>
               <span data-icon="wifi-off"></span>Map tiles unavailable. Your library is still
@@ -376,7 +390,8 @@
         </article>
         <div class="shortcuts">
           <span><kbd>←</kbd><kbd>→</kbd>Previous / next</span><span><kbd>Esc</kbd>Close a view</span
-          ><span><kbd>/</kbd>Search</span><span><kbd>F</kbd>Fit photos</span>
+          ><span><kbd>/</kbd>Search</span><span><kbd>F</kbd>Fit photos</span
+          ><span><kbd>F11</kbd>Fullscreen map</span>
         </div>
         <p class="help-footnote">
           HEIC decoding is included. Video playback depends on the video’s codec. If a preview is
