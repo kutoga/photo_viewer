@@ -1,3 +1,4 @@
 @echo off
 cd /d "%~dp0"
-npm start
+call npm start
+if errorlevel 1 pause

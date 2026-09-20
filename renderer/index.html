@@ -1,225 +1,408 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Photo Map</title>
-
-  <meta http-equiv="Content-Security-Policy" content="
-    default-src 'self' cache: file:;
-    script-src 'self';
-    style-src 'self' 'unsafe-inline';
-    img-src 'self' cache: data: blob: https://*.arcgisonline.com;
-    media-src 'self' file: cache:;
-    connect-src 'self' https://*.arcgisonline.com;
-  " />
-
-  <link rel="stylesheet" href="vendor/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-
-  <!-- Full-screen map -->
-  <div id="map"></div>
-
-  <!-- Control panel — top left overlay, collapsible -->
-  <div id="panel">
-    <div id="panel-header">
-      <span id="panel-title">Photo Map</span>
-      <div id="panel-header-actions">
-        <button id="help-btn" aria-label="Help" title="Help">?</button>
-        <button id="panel-toggle" aria-label="Collapse panel">&#x2212;</button>
-      </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' media: data: blob: https://*.arcgisonline.com; media-src 'self' media:; connect-src 'self' https://*.arcgisonline.com; object-src 'none'; base-uri 'none'"
+    />
+    <title>Photo Map</title>
+    <link rel="stylesheet" href="vendor/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Library and filters">
+        <a class="brand" href="#" id="brand-home" aria-label="Photo Map home"
+          ><span class="brand-mark" data-icon="aperture"></span
+          ><span>Photo Map<small>A WORLD OF MEMORIES</small></span></a
+        >
+        <div class="sidebar-scroll">
+          <div class="section-label">WORKSPACE</div>
+          <button class="nav-item active" id="nav-library">
+            <span data-icon="map"></span>Your library<span class="nav-count" id="library-total"
+              >0</span
+            >
+          </button>
+          <div class="library-overview">
+            <span class="eyebrow">A little perspective</span>
+            <div><strong id="located-total">0</strong><span>memories on the map</span></div>
+            <div class="overview-meta">
+              <span><i class="dot"></i>Private. Local. Yours.</span>
+            </div>
+          </div>
+          <div class="section-heading">
+            <h2>Folders</h2>
+            <button
+              class="icon-button"
+              id="rescan"
+              title="Rescan folders"
+              aria-label="Rescan folders"
+              disabled
+            >
+              <span data-icon="refresh"></span>
+            </button>
+          </div>
+          <div id="folder-list" class="folder-list"></div>
+          <button class="add-folder-button" data-add-folder>
+            <span data-icon="plus"></span>Add a folder
+          </button>
+          <p class="folder-note" id="folder-note">Your originals stay right where they are.</p>
+          <div class="sidebar-divider"></div>
+          <div class="section-heading">
+            <h2>Refine your view</h2>
+            <button class="text-button" id="reset-filters" hidden>Reset</button>
+          </div>
+          <label class="search-field"
+            ><span data-icon="search"></span
+            ><input
+              id="search"
+              type="search"
+              placeholder="Find a photo or folder…"
+              aria-label="Search filenames or folders"
+            /><kbd>/</kbd></label
+          >
+          <label class="field-label" for="media-type">Media type</label>
+          <div class="segmented" id="media-type" role="group" aria-label="Media type">
+            <button class="selected" data-type="all" aria-pressed="true">All</button
+            ><button data-type="photo" aria-pressed="false">
+              <span data-icon="image"></span>Photos</button
+            ><button data-type="video" aria-pressed="false">
+              <span data-icon="video"></span>Videos
+            </button>
+          </div>
+          <label class="field-label" for="folder-filter">Source folder</label>
+          <select id="folder-filter">
+            <option value="">All folders</option>
+          </select>
+          <p id="unlocated-note" class="subtle-note" hidden></p>
+        </div>
+        <div class="sidebar-footer">
+          <button id="help-open" class="quiet-button">
+            <span data-icon="help"></span>Help & shortcuts</button
+          ><span class="version">v2.0</span>
+        </div>
+      </aside>
+      <main class="workspace">
+        <header class="topbar">
+          <div class="breadcrumb">
+            <span>Your library</span><span data-icon="chevron-right"></span
+            ><strong id="breadcrumb-view">Map explorer</strong>
+          </div>
+          <div class="topbar-actions">
+            <div class="view-switch" role="group" aria-label="View">
+              <button id="view-map" class="selected" aria-pressed="true">
+                <span data-icon="map"></span>Map</button
+              ><button id="view-gallery" aria-pressed="false">
+                <span data-icon="grid"></span>Gallery
+              </button>
+            </div>
+            <button class="button primary" data-add-folder>
+              <span data-icon="plus"></span>Add photos
+            </button>
+          </div>
+        </header>
+        <section class="view-heading">
+          <div>
+            <div class="eyebrow" id="view-eyebrow">EVERY MEMORY HAS A PLACE</div>
+            <h1 id="view-title">Your world, in pictures.</h1>
+            <p id="view-description">Bring your photos together. Rediscover where you’ve been.</p>
+          </div>
+          <div class="heading-summary" id="heading-summary">
+            <span class="summary-number" id="visible-count">0</span
+            ><span id="visible-caption">on your map</span>
+          </div>
+        </section>
+        <div id="scan-panel" class="scan-panel" hidden role="status" aria-live="polite">
+          <div class="scan-spinner"></div>
+          <div class="scan-copy">
+            <strong id="scan-title">Exploring your folders…</strong
+            ><span id="scan-detail">Looking for photos and videos</span>
+          </div>
+          <span id="scan-count"></span
+          ><button id="cancel-scan" class="text-button">Stop scan</button>
+          <div class="scan-track"><div></div></div>
+        </div>
+        <div id="error-banner" class="error-banner" hidden role="alert">
+          <span data-icon="alert"></span><span id="error-text"></span
+          ><button class="icon-button" id="error-dismiss" aria-label="Dismiss error">
+            <span data-icon="close"></span>
+          </button>
+        </div>
+        <section class="explorer" id="explorer" aria-label="Photo explorer">
+          <div class="map-view" id="map-view">
+            <div id="map" aria-label="Interactive photo map"></div>
+            <div class="map-toolbar">
+              <div class="map-indicator">
+                <i class="dot"></i><span id="map-mode">Satellite view</span>
+              </div>
+              <button
+                id="fit-map"
+                class="map-button"
+                title="Fit all matching photos"
+                aria-label="Fit all matching photos"
+              >
+                <span data-icon="focus"></span>Fit photos
+              </button>
+              <div class="toolbar-divider"></div>
+              <label class="labels-toggle"
+                ><input type="checkbox" id="show-labels" checked /><span data-icon="layers"></span
+                >Labels</label
+              >
+            </div>
+            <div id="map-offline" class="map-offline" hidden>
+              <span data-icon="wifi-off"></span>Map tiles unavailable. Your library is still
+              here.<button id="retry-tiles" class="text-button">Retry</button>
+            </div>
+            <div class="map-caption">
+              <span data-icon="compass"></span
+              ><span id="map-hint">Zoom in to get a little closer.</span>
+            </div>
+            <div class="map-controls">
+              <button id="zoom-in" aria-label="Zoom in" title="Zoom in">
+                <span data-icon="plus"></span></button
+              ><button id="zoom-out" aria-label="Zoom out" title="Zoom out">
+                <span data-icon="minus"></span>
+              </button>
+            </div>
+            <button id="browse-area" class="browse-area">
+              <span data-icon="grid"></span>Browse this area<span data-icon="arrow-right"></span>
+            </button>
+          </div>
+          <div class="gallery-view" id="gallery-view" hidden>
+            <div class="gallery-toolbar">
+              <span id="gallery-count">All memories</span
+              ><label
+                >Sort by<select id="sort-order">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="name">File name</option>
+                </select></label
+              >
+            </div>
+            <div id="gallery-scroll" class="gallery-scroll" aria-label="Photo gallery">
+              <div id="gallery-space" class="gallery-space"></div>
+            </div>
+          </div>
+          <div class="empty-state" id="empty-state">
+            <div class="empty-illustration">
+              <div class="empty-orbit"></div>
+              <span class="empty-photo back" data-icon="image"></span
+              ><span class="empty-photo front" data-icon="mountain"></span
+              ><span class="empty-pin" data-icon="pin"></span>
+            </div>
+            <span class="eyebrow">A NEW WAY TO LOOK BACK</span>
+            <h2>Your next journey starts here.</h2>
+            <p>
+              Add a folder of photos or videos.<br />We’ll put your geotagged memories on the map.
+            </p>
+            <button class="button primary" data-add-folder>
+              <span data-icon="folder-plus"></span>Choose your first folder</button
+            ><span class="empty-reassurance"
+              ><span data-icon="shield"></span>Nothing uploaded. Originals untouched.</span
+            >
+          </div>
+          <div class="no-results" id="no-results" hidden>
+            <span data-icon="search"></span>
+            <h2>No memories in this view</h2>
+            <p id="no-results-description">Try a different date, folder, or media type.</p>
+            <button id="clear-empty-filters" class="button secondary">Clear filters</button>
+          </div>
+          <aside id="area-panel" class="area-panel" hidden aria-label="Photos in this area">
+            <div class="area-heading">
+              <div>
+                <span class="eyebrow">A CLOSER LOOK</span>
+                <h2 id="area-title">Photos in this area</h2>
+                <p id="area-count"></p>
+              </div>
+              <button class="icon-button" id="area-close" aria-label="Close area photos">
+                <span data-icon="close"></span>
+              </button>
+            </div>
+            <div id="area-scroll" class="gallery-scroll">
+              <div id="area-space" class="gallery-space"></div>
+            </div>
+          </aside>
+        </section>
+        <footer class="timeline" id="timeline">
+          <div class="timeline-title">
+            <span data-icon="calendar"></span>
+            <div>
+              <strong>Your timeline</strong
+              ><span id="timeline-caption">Add photos to explore by date</span>
+            </div>
+          </div>
+          <div class="timeline-controls">
+            <label class="date-input"
+              ><span>From</span><input id="date-from" type="date" aria-label="From date" disabled
+            /></label>
+            <div class="range-wrap">
+              <div class="range-track"><div id="range-fill"></div></div>
+              <input
+                id="range-from"
+                type="range"
+                min="0"
+                max="1"
+                value="0"
+                aria-label="Start of date range"
+                disabled
+              /><input
+                id="range-to"
+                type="range"
+                min="0"
+                max="1"
+                value="1"
+                aria-label="End of date range"
+                disabled
+              />
+            </div>
+            <label class="date-input"
+              ><span>To</span
+              ><input id="date-to" type="date" aria-label="To date" disabled /></label
+            ><button
+              id="date-reset"
+              class="icon-button"
+              aria-label="Reset date range"
+              title="Reset date range"
+              disabled
+            >
+              <span data-icon="undo"></span>
+            </button>
+          </div>
+        </footer>
+        <div class="statusbar">
+          <span id="status-text"><i class="dot"></i>Ready when you are</span
+          ><span id="status-secondary">Made for your memories</span>
+        </div>
+      </main>
     </div>
-
-    <div id="panel-body">
-      <div id="folders-section">
-        <div id="folders-list"></div>
-        <div id="folders-actions">
-          <button id="add-folder-btn">+ Add Folder</button>
-          <button id="refresh-btn" class="hidden" title="Rescan all folders">&#x21bb;</button>
-        </div>
-      </div>
-
-      <!-- Progress (hidden when idle) -->
-      <div id="progress-section" class="hidden">
-        <div id="progress-track">
-          <div id="progress-fill"></div>
-        </div>
-        <span id="progress-label">Scanning…</span>
-      </div>
-
-      <!-- Photo count -->
-      <div id="stats-row">
-        <span id="photo-count"></span>
-      </div>
-
-      <!-- Map controls -->
-      <div id="map-controls">
-        <label id="labels-toggle">
-          <input type="checkbox" id="labels-check" checked />
-          <span>Show labels</span>
-        </label>
-        <select id="media-filter">
-          <option value="all">All media</option>
-          <option value="photo">Photos only</option>
-          <option value="video">Videos only</option>
-        </select>
-        <button id="gallery-btn" title="Browse photos in view">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-            <rect x="0" y="0" width="4" height="4" rx="0.8"/>
-            <rect x="5" y="0" width="4" height="4" rx="0.8"/>
-            <rect x="10" y="0" width="4" height="4" rx="0.8"/>
-            <rect x="0" y="5" width="4" height="4" rx="0.8"/>
-            <rect x="5" y="5" width="4" height="4" rx="0.8"/>
-            <rect x="10" y="5" width="4" height="4" rx="0.8"/>
-            <rect x="0" y="10" width="4" height="4" rx="0.8"/>
-            <rect x="5" y="10" width="4" height="4" rx="0.8"/>
-            <rect x="10" y="10" width="4" height="4" rx="0.8"/>
-          </svg>
+    <dialog id="lightbox" class="lightbox" aria-label="Media viewer">
+      <div class="viewer-top">
+        <span id="viewer-position"></span
+        ><button class="icon-button dark" id="viewer-close" aria-label="Close viewer">
+          <span data-icon="close"></span>
         </button>
       </div>
-    </div>
-  </div>
-
-  <!-- Help overlay -->
-  <div id="help" class="hidden">
-    <div id="help-backdrop"></div>
-    <div id="help-panel">
-      <div id="help-header">
-        <span id="help-title">Help</span>
-        <button id="help-close" aria-label="Close help">&times;</button>
-      </div>
-      <div id="help-body">
-        <section>
-          <h3>Getting Started</h3>
-          <p>Click <strong>+ Add Folder</strong> to select a folder containing photos or videos. The app scans for GPS-tagged media and displays them on the satellite map.</p>
-        </section>
-        <section>
-          <h3>Map Navigation</h3>
-          <ul>
-            <li><strong>Zoom out</strong> &mdash; heatmap overview of photo density</li>
-            <li><strong>Zoom mid</strong> &mdash; cluster bubbles showing photo count (click to expand)</li>
-            <li><strong>Zoom in</strong> &mdash; individual photo thumbnails on the map</li>
-          </ul>
-        </section>
-        <section>
-          <h3>Viewing Photos</h3>
-          <ul>
-            <li>Click any thumbnail to open it in the lightbox</li>
-            <li>Use <kbd>&larr;</kbd> <kbd>&rarr;</kbd> arrow keys or the on-screen arrows to navigate</li>
-            <li>Press <kbd>Esc</kbd> or click the backdrop to close</li>
-            <li>Coordinates link to Google Maps &middot; file path reveals in explorer</li>
-          </ul>
-        </section>
-        <section>
-          <h3>Controls</h3>
-          <ul>
-            <li><strong>Show labels</strong> &mdash; overlay street names and place labels</li>
-            <li><strong>Media filter</strong> &mdash; show photos only, videos only, or all</li>
-            <li>
-              <strong>Gallery</strong>
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor" style="vertical-align:-1px;margin:0 2px">
-                <rect x="0" y="0" width="4" height="4" rx="0.8"/><rect x="5" y="0" width="4" height="4" rx="0.8"/><rect x="10" y="0" width="4" height="4" rx="0.8"/>
-                <rect x="0" y="5" width="4" height="4" rx="0.8"/><rect x="5" y="5" width="4" height="4" rx="0.8"/><rect x="10" y="5" width="4" height="4" rx="0.8"/>
-                <rect x="0" y="10" width="4" height="4" rx="0.8"/><rect x="5" y="10" width="4" height="4" rx="0.8"/><rect x="10" y="10" width="4" height="4" rx="0.8"/>
-              </svg>
-              &mdash; browse all photos in the current view as a grid
-            </li>
-            <li><strong>Refresh</strong> &#x21bb; &mdash; rescan all folders for new or changed files</li>
-          </ul>
-        </section>
-        <section>
-          <h3>Keyboard Shortcuts</h3>
-          <ul>
-            <li><kbd>Esc</kbd> &mdash; close lightbox / gallery / help</li>
-            <li><kbd>&larr;</kbd> / <kbd>&rarr;</kbd> &mdash; previous / next photo in lightbox</li>
-          </ul>
-        </section>
-      </div>
-    </div>
-  </div>
-
-  <!-- Gallery overlay -->
-  <div id="gallery" class="hidden">
-    <div id="gallery-backdrop"></div>
-    <div id="gallery-panel">
-      <div id="gallery-header">
-        <span id="gallery-count"></span>
-        <button id="gallery-close" aria-label="Close gallery">&times;</button>
-      </div>
-      <div id="gallery-grid"></div>
-    </div>
-  </div>
-
-  <!-- Date range slider — bottom bar -->
-  <div id="date-slider" class="hidden">
-    <div id="date-slider-inner">
-      <button class="date-pill" id="date-pill-min" title="Pick start date">
-        <span class="date-pill-label">From</span>
-        <span class="date-pill-value" id="date-label-min"></span>
-      </button>
-      <div id="date-track-wrap">
-        <div id="date-track">
-          <div id="date-track-fill"></div>
+      <div class="viewer-body">
+        <button class="viewer-nav" id="viewer-prev" aria-label="Previous photo">
+          <span data-icon="chevron-left"></span>
+        </button>
+        <div class="viewer-stage">
+          <img id="viewer-image" alt="" /><video
+            id="viewer-video"
+            controls
+            playsinline
+            hidden
+          ></video>
+          <div id="viewer-loading" class="viewer-loading" hidden>
+            <span class="scan-spinner"></span>Loading preview…
+          </div>
+          <div id="viewer-error" class="viewer-error" hidden></div>
         </div>
-        <input type="range" id="date-range-min" min="0" max="1" step="1" value="0" />
-        <input type="range" id="date-range-max" min="0" max="1" step="1" value="1" />
+        <button class="viewer-nav" id="viewer-next" aria-label="Next photo">
+          <span data-icon="chevron-right"></span>
+        </button>
       </div>
-      <button class="date-pill" id="date-pill-max" title="Pick end date">
-        <span class="date-pill-label">To</span>
-        <span class="date-pill-value" id="date-label-max"></span>
-      </button>
-      <button id="date-reset-btn" disabled title="Reset date filter">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
-        </svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- Calendar popup (shared, repositioned per use) -->
-  <div id="cal-popup" class="hidden">
-    <div id="cal-header">
-      <button id="cal-prev" aria-label="Previous month">&#x2039;</button>
-      <span id="cal-title"></span>
-      <button id="cal-next" aria-label="Next month">&#x203a;</button>
-    </div>
-    <div id="cal-weekdays">
-      <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
-    </div>
-    <div id="cal-grid"></div>
-  </div>
-
-  <!-- Lightbox overlay -->
-  <div id="lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Photo preview">
-    <div id="lightbox-backdrop"></div>
-
-    <button id="lightbox-prev" class="lightbox-nav hidden" aria-label="Previous">&#x2039;</button>
-    <button id="lightbox-next" class="lightbox-nav hidden" aria-label="Next">&#x203a;</button>
-
-    <div id="lightbox-content">
-      <button id="lightbox-close" aria-label="Close">&times;</button>
-      <div id="lightbox-media">
-        <img id="lightbox-img" alt="Photo preview" />
-        <video id="lightbox-video" controls playsinline class="hidden"></video>
-        <button id="lightbox-play" class="hidden" aria-label="Play video">&#9654;</button>
+      <div class="viewer-bottom">
+        <div class="viewer-info">
+          <h2 id="viewer-name"></h2>
+          <p id="viewer-date"></p>
+          <button id="viewer-path" class="viewer-path" title="Show in file manager"></button>
+        </div>
+        <div class="viewer-actions">
+          <button id="viewer-map" class="button glass">
+            <span data-icon="pin"></span>Google Maps</button
+          ><button id="viewer-original" class="button glass">
+            <span data-icon="external"></span>Open original</button
+          ><button id="viewer-reveal" class="button glass">
+            <span data-icon="folder"></span>Show in folder
+          </button>
+        </div>
       </div>
-      <div id="lightbox-meta">
-        <span id="lightbox-counter" class="hidden"></span>
-        <span id="lightbox-date"></span>
-        <span id="lightbox-coords" class="lightbox-link"></span>
-        <span id="lightbox-filepath" class="lightbox-link"></span>
+    </dialog>
+    <dialog id="help-dialog" class="help-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">MAKE YOURSELF AT HOME</span>
+          <h2>A small guide to your world.</h2>
+        </div>
+        <button id="help-close" class="icon-button" aria-label="Close help">
+          <span data-icon="close"></span>
+        </button>
       </div>
+      <div class="help-content">
+        <article>
+          <span data-icon="folder-plus"></span>
+          <div>
+            <h3>Start with a folder</h3>
+            <p>
+              Add as many folders as you like. Subfolders are included. Only photos and videos with
+              embedded GPS coordinates appear on the map. Your original files are never edited or
+              moved.
+            </p>
+          </div>
+        </article>
+        <article>
+          <span data-icon="map"></span>
+          <div>
+            <h3>See the big picture. Then get closer.</h3>
+            <p>
+              Zoom out for a heatmap, or zoom in to see photo clusters. Click a cluster to explore
+              its memories. “Browse this area” shows photos inside the current map boundaries.
+            </p>
+          </div>
+        </article>
+        <article>
+          <span data-icon="calendar"></span>
+          <div>
+            <h3>Find a moment</h3>
+            <p>
+              Search a filename, choose a source folder, or narrow the timeline. Undated photos stay
+              visible. Switch to Gallery for a larger view of every matching memory.
+            </p>
+          </div>
+        </article>
+        <article>
+          <span data-icon="refresh"></span>
+          <div>
+            <h3>Keep your library up to date</h3>
+            <p>
+              Use the rescan button beside Folders after adding or changing files. Unchanged files
+              are skipped. Removing a folder only removes its cached copies. Internet is needed for
+              map tiles, not for your photo library.
+            </p>
+          </div>
+        </article>
+        <div class="shortcuts">
+          <span><kbd>←</kbd><kbd>→</kbd>Previous / next</span><span><kbd>Esc</kbd>Close a view</span
+          ><span><kbd>/</kbd>Search</span><span><kbd>F</kbd>Fit photos</span>
+        </div>
+        <p class="help-footnote">
+          HEIC decoding is included. Video playback depends on the video’s codec. If a preview is
+          unavailable, use “Open original” to open your system’s default viewer.
+        </p>
+      </div>
+    </dialog>
+    <dialog id="confirm-dialog" class="confirm-dialog">
+      <span class="confirm-icon" data-icon="folder"></span>
+      <h2>Remove this folder?</h2>
+      <p id="confirm-description"></p>
+      <p class="subtle-note">Original photos and videos will stay on your drive.</p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="button secondary">Keep folder</button
+        ><button id="confirm-remove" class="button danger">Remove folder</button>
+      </div>
+    </dialog>
+    <div class="toast" id="toast" hidden role="status" aria-live="polite">
+      <span data-icon="check"></span><span id="toast-text"></span>
     </div>
-  </div>
-
-  <!-- Vendor libraries -->
-  <script src="vendor/leaflet.js"></script>
-  <script src="vendor/leaflet-heat.js"></script>
-  <script src="vendor/supercluster.js"></script>
-
-  <!-- App logic -->
-  <script src="app.js"></script>
-</body>
+    <script src="vendor/leaflet.js"></script>
+    <script src="vendor/leaflet-heat.js"></script>
+    <script src="icons.js"></script>
+    <script src="model.js"></script>
+    <script src="gallery.js"></script>
+    <script src="map.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>

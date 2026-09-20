@@ -1,15 +1,15 @@
-/**
- * Launcher script that clears ELECTRON_RUN_AS_NODE before spawning Electron.
- * VS Code's terminal sets ELECTRON_RUN_AS_NODE=1 which disables Electron's API.
- */
+'use strict';
+const { spawn } = require('node:child_process');
+const path = require('node:path');
 delete process.env.ELECTRON_RUN_AS_NODE;
-
-const { spawn } = require('child_process');
-const electron = require('electron');
-
-const child = spawn(electron, ['.'], {
+const child = spawn(require('electron'), [path.join(__dirname, '.')], {
   stdio: 'inherit',
   env: { ...process.env },
 });
-
-child.on('close', (code) => process.exit(code));
+child.on('error', (err) => {
+  console.error(err.message);
+  process.exitCode = 1;
+});
+child.on('close', (code) => {
+  process.exitCode = code ?? 1;
+});

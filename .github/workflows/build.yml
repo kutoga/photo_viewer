@@ -1,0 +1,65 @@
+name: Test and build desktop apps
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - name: Test Windows desktop
+        if: runner.os == 'Windows'
+        run: npm run test:desktop
+      - name: Test Linux desktop
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:desktop
+        env:
+          PHOTO_MAP_TEST_NO_SANDBOX: '1'
+      - name: Build Windows installer and portable executable
+        if: runner.os == 'Windows'
+        run: npm run build:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Build Linux AppImage and Debian package
+        if: runner.os == 'Linux'
+        run: npm run build:linux
+      - name: Test packaged Windows application
+        if: runner.os == 'Windows'
+        run: npm run test:desktop
+        env:
+          PHOTO_MAP_EXECUTABLE: ${{ github.workspace }}\dist\win-unpacked\Photo Map.exe
+      - name: Test packaged Linux application
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:desktop
+        env:
+          PHOTO_MAP_EXECUTABLE: ${{ github.workspace }}/dist/linux-unpacked/photo-map
+          PHOTO_MAP_TEST_NO_SANDBOX: '1'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Photo-Map-${{ runner.os }}-x64
+          path: |
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Test-results-${{ runner.os }}
+          path: test-results/
