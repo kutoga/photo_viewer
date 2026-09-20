@@ -5,6 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const sharp = require('sharp');
+const { CACHE_VERSION } = require('../lib/core.cjs');
 const root = path.join(__dirname, '..');
 (async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'photo-map-desktop-'));
@@ -64,12 +65,13 @@ const root = path.join(__dirname, '..');
   try {
     const args = process.env.PHOTO_MAP_EXECUTABLE ? [] : [root];
     if (process.env.PHOTO_MAP_TEST_NO_SANDBOX === '1') args.push('--no-sandbox');
-    app = await electron.launch({
+    const launchOptions = {
       executablePath: process.env.PHOTO_MAP_EXECUTABLE || require('electron'),
       args,
       env: { ...process.env, PHOTO_MAP_USER_DATA: userData },
       timeout: 30000,
-    });
+    };
+    app = await electron.launch(launchOptions);
     const page = await app.firstWindow();
     const errors = [];
     page.on('pageerror', (err) => errors.push(err.message));
@@ -144,8 +146,56 @@ const root = path.join(__dirname, '..');
     await fs.mkdir(path.join(root, 'test-results'), { recursive: true });
     await page.screenshot({ path: path.join(root, 'test-results/desktop-linux.png') });
     if (errors.length) throw new Error(errors.join('\n'));
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
+    await page.locator('[data-map-mode="bubbles"]').click();
+    await page.locator('#show-labels').uncheck();
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      window.unmaximize();
+      window.setSize(1100, 660);
+    });
+    const savedSize = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getSize(),
+    );
+    await app.close();
+    app = null;
+    const metadataPath = path.join(cache, 'metadata.json');
+    const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+    const stale = metadata.filter((entry) => entry.filename.endsWith('.jpg')).slice(0, 2);
+    delete stale[0].cacheVersion;
+    stale[1].cacheVersion = CACHE_VERSION - 1;
+    await fs.writeFile(metadataPath, JSON.stringify(metadata));
+    const oldThumb = path.join(cache, 'thumbnails', `${stale[0].id}_thumb.jpg`);
+    await sharp({ create: { width: 100, height: 100, channels: 3, background: '#ff0000' } })
+      .jpeg()
+      .toFile(oldThumb);
+    app = await electron.launch(launchOptions);
+    const restarted = await app.firstWindow();
+    restarted.on('pageerror', (err) => errors.push(err.message));
+    await expect(restarted.locator('#status-text')).toContainText('12 unchanged files skipped', {
+      timeout: 45000,
+    });
+    await expect(restarted.locator('[data-map-mode="bubbles"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(restarted.locator('#show-labels')).not.toBeChecked();
+    const restoredSize = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getSize(),
+    );
+    if (restoredSize.join(',') !== savedSize.join(','))
+      throw new Error(
+        `Window size was not restored: wanted ${savedSize}, got ${restoredSize}, saved ${await fs.readFile(path.join(userData, 'window-state.json'), 'utf8')}`,
+      );
+    const refreshed = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+    if (!refreshed.every((entry) => entry.cacheVersion === CACHE_VERSION))
+      throw new Error('Restart did not upgrade all obsolete cache entries');
+    const dimensions = await sharp(oldThumb).metadata();
+    if (dimensions.width !== 320 || dimensions.height !== 240)
+      throw new Error('Restart did not regenerate the obsolete thumbnail');
+    if (errors.length) throw new Error(errors.join('\n'));
     console.log(
-      'Desktop smoke passed: native picker IPC, scan, GPS, worker threads, preview protocol, video loading/seeking, native fullscreen, gallery, and unchanged rescan.',
+      'Desktop smoke passed: native picker IPC, scan, GPS, worker threads, preview protocol, video loading/seeking, native fullscreen, gallery, unchanged rescan, and automatic cache upgrades and workspace restoration after restart.',
     );
   } finally {
     if (app) await app.close();

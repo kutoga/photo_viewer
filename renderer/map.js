@@ -5,6 +5,7 @@ class PhotoAtlas {
     this.onArea = onArea;
     this.onError = onError;
     this.items = new Map();
+    this.mode = 'auto';
     this.markers = new Map();
     this.version = 0;
     this.renderedVersion = 0;
@@ -76,9 +77,11 @@ class PhotoAtlas {
     this.map.on('moveend zoomend', () => this.scheduleQuery());
     this.map.on('zoomstart', () => this.clearSpider());
     this.map.on('click', () => this.clearSpider());
-    new ResizeObserver(() => this.map.invalidateSize({ pan: false })).observe(
-      document.getElementById('map'),
-    );
+    new ResizeObserver(() => {
+      const element = document.getElementById('map');
+      if (element.clientWidth && element.clientHeight)
+        this.map.invalidateSize({ pan: true, animate: false });
+    }).observe(document.getElementById('map'));
   }
   setItems(items) {
     if (document.getElementById('map-view').hidden) {
@@ -132,7 +135,7 @@ class PhotoAtlas {
     }
   }
   resume() {
-    this.map.invalidateSize({ pan: false });
+    this.map.invalidateSize({ pan: true, animate: false });
     if (this.deferredItems) {
       const items = this.deferredItems;
       this.deferredItems = null;
@@ -168,13 +171,30 @@ class PhotoAtlas {
       this.query();
     });
   }
+  setMode(mode) {
+    if (!['auto', 'heat', 'bubbles'].includes(mode)) return;
+    this.mode = mode;
+    this.cancelSelection();
+    this.layer.clearLayers();
+    this.markers.clear();
+    this.queryRequest = ++this.request;
+    this.query();
+  }
+  usesHeat() {
+    return this.mode === 'heat' || (this.mode === 'auto' && this.map.getZoom() < 8);
+  }
   query() {
     const zoom = Math.floor(this.map.getZoom());
-    document.getElementById('map-mode').textContent =
-      zoom < 8 && this.items.size ? 'Memory heatmap' : 'Satellite view';
-    document.getElementById('map-hint').textContent =
-      zoom < 8 ? 'Zoom in to get a little closer.' : 'Click a photo or a cluster to explore.';
-    if (zoom < 8) {
+    const heat = this.usesHeat();
+    document.getElementById('map-mode').textContent = heat
+      ? 'Memory heatmap'
+      : this.mode === 'bubbles'
+        ? 'Photo counts'
+        : 'Photo clusters';
+    document.getElementById('map-hint').textContent = heat
+      ? 'Browse an area to explore its photos.'
+      : 'Click a photo or a bubble to explore.';
+    if (heat) {
       this.layer.clearLayers();
       this.markers.clear();
       this.renderedVersion = 0;
@@ -208,27 +228,30 @@ class PhotoAtlas {
     if (this.map.hasLayer(this.heat)) this.map.removeLayer(this.heat);
   }
   render(clusters) {
-    if (this.map.getZoom() < 8) return;
+    if (this.usesHeat()) return;
     const wanted = new Set();
     for (const cluster of clusters) {
       const p = cluster.properties,
         entry = this.items.get(p.id);
       if (!p.cluster && !entry) continue;
-      const key = p.cluster ? `c${this.version}:${p.cluster_id}` : `p${p.id}:${entry.fileMtime}`;
+      const key = p.cluster
+        ? `c${this.version}:${p.cluster_id}`
+        : `p${p.id}:${entry.fileMtime}:${entry.cacheVersion}`;
       wanted.add(key);
       if (this.markers.has(key)) continue;
       const [lng, lat] = cluster.geometry.coordinates;
       let marker;
-      if (p.cluster) {
-        const size = Math.round(Math.min(58, 35 + Math.log(p.point_count) * 3));
+      if (p.cluster || this.mode === 'bubbles') {
+        const total = p.cluster ? p.point_count : 1;
+        const size = Math.round(Math.min(58, 35 + Math.log(total) * 3));
         marker = L.marker([lat, lng], {
           icon: L.divIcon({
             className: 'cluster-marker',
-            html: `<div class="cluster-pin" style="width:${size}px;height:${size}px">${p.point_count_abbreviated}</div>`,
+            html: `<div class="cluster-pin" style="width:${size}px;height:${size}px">${p.cluster ? p.point_count_abbreviated : 1}</div>`,
             iconSize: [size, size],
             iconAnchor: [size / 2, size / 2],
           }),
-          title: `Explore ${p.point_count} memories`,
+          title: p.cluster ? `Explore ${total} memories` : `Open ${entry.filename}`,
           keyboard: true,
           autoPanOnFocus: false,
           riseOnHover: true,
@@ -237,6 +260,10 @@ class PhotoAtlas {
         const clusterVersion = this.version;
         const records = this.items;
         marker.on('click', async () => {
+          if (!p.cluster) {
+            this.onPhoto(entry.id);
+            return;
+          }
           const selection = ++this.selection;
           this.markers.forEach((m) => m.getElement()?.classList.remove('is-selected'));
           const element = marker.getElement();
@@ -258,7 +285,7 @@ class PhotoAtlas {
           const items = ids.map((id) => records.get(id)).filter(Boolean);
           if (!items.length) return;
           this.onArea(items, 'Photos at this location');
-          if (items.length <= 24) this.spiderfy(items, [lat, lng]);
+          if (items.length <= 24 && this.mode !== 'bubbles') this.spiderfy(items, [lat, lng]);
         });
       } else marker = this.photoMarker(entry, [lat, lng], 48, () => this.onPhoto(entry.id));
       marker.addTo(this.layer);

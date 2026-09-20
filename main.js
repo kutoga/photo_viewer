@@ -1,11 +1,27 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  protocol,
+  net,
+  shell,
+  Menu,
+  screen,
+} = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs/promises');
 const { Readable } = require('node:stream');
 const { createReadStream } = require('node:fs');
 const { Library } = require('./lib/library.cjs');
+const { atomicWrite, readJSON } = require('./lib/core.cjs');
+const { restoreBounds } = require('./lib/window-state.cjs');
+let saveCurrentWindow = () => {};
+let savedWindow = {},
+  windowSave = Promise.resolve(),
+  windowTimer;
 let window, library;
 let quitting = false;
 app.setName('photo-map'); // Keep v1's userData directory on Windows and Linux.
@@ -23,8 +39,7 @@ const send = (channel, data) => {
 
 function createWindow() {
   window = new BrowserWindow({
-    width: 1440,
-    height: 960,
+    ...restoreBounds(savedWindow, screen.getAllDisplays()),
     minWidth: 900,
     minHeight: 640,
     title: 'Photo Map',
@@ -36,6 +51,27 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+  if (savedWindow.maximized) window.maximize();
+  const saveWindow = () => {
+    clearTimeout(windowTimer);
+    if (!window || window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
+    savedWindow = { bounds: window.getNormalBounds(), maximized: window.isMaximized() };
+    const value = savedWindow;
+    windowSave = windowSave
+      .catch(() => {})
+      .then(() => atomicWrite(path.join(app.getPath('userData'), 'window-state.json'), value))
+      .catch(() => {});
+  };
+  const scheduleWindow = () => {
+    clearTimeout(windowTimer);
+    windowTimer = setTimeout(saveWindow, 250);
+  };
+  for (const event of ['resize', 'move', 'maximize', 'unmaximize'])
+    window.on(event, scheduleWindow);
+  saveCurrentWindow = saveWindow;
+  window.on('close', () => {
+    if (!quitting) saveWindow();
   });
   window.setMenuBarVisibility(false);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -62,11 +98,13 @@ async function serveMedia(request) {
   if (!/^[a-f0-9]{32}$/.test(id) || !library.entries.has(id))
     return new Response('Not found', { status: 404 });
   const entry = library.entries.get(id);
-  if (url.hostname === 'thumbnails' || url.hostname === 'previews') {
-    const folder = url.hostname;
-    const suffix = folder === 'thumbnails' ? 'thumb' : 'preview';
+  if (['thumbnails', 'previews', 'full'].includes(url.hostname)) {
+    const full = url.hostname === 'full';
+    const folder = url.hostname === 'thumbnails' ? 'thumbnails' : 'previews';
+    const suffix = folder === 'thumbnails' ? 'thumb' : full ? 'full' : 'preview';
     const filename = path.join(library.cacheDir, folder, `${id}_${suffix}.jpg`);
     try {
+      if (folder === 'thumbnails') await library.thumbnail(id);
       return await net.fetch(pathToFileURL(filename).href);
     } catch {
       return new Response('Image unavailable', { status: 404 });
@@ -126,6 +164,11 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       Menu.setApplicationMenu(null);
+      savedWindow = await readJSON(
+        path.join(app.getPath('userData'), 'window-state.json'),
+        {},
+      ).catch(() => ({}));
+      if (!savedWindow || typeof savedWindow !== 'object') savedWindow = {};
       library = new Library(path.join(app.getPath('userData'), 'photo-map-cache'));
       await library.init();
       protocol.handle('media', serveMedia);
@@ -156,7 +199,9 @@ if (!app.requestSingleInstanceLock()) {
         library.cancel();
         return true;
       });
-      handle('media:preview', (id) => library.preview(id));
+      handle('media:preview', (id, options) =>
+        library.preview(id, { full: options?.full === true, prefetch: options?.prefetch === true }),
+      );
       handle('media:reveal', (id) => {
         const entry = library.entries.get(id);
         if (!entry) throw new Error('File not found in library');
@@ -196,11 +241,13 @@ app.on('before-quit', (event) => {
   if (!library || quitting) return;
   event.preventDefault();
   quitting = true;
+  saveCurrentWindow();
   library.cancel();
   // Let the bounded in-flight work finish and checkpoint before exiting.
   const wait = async () => {
     while (library.scan) await new Promise((resolve) => setTimeout(resolve, 100));
     await library.close();
+    await windowSave.catch(() => {});
     app.quit();
   };
   wait().catch(() => app.exit());

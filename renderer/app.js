@@ -1,6 +1,44 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 const api = window.photoMap;
+function readWorkspace() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('photo-map-workspace'));
+    return saved?.version === 1 ? saved : {};
+  } catch {
+    return {};
+  }
+}
+const workspace = readWorkspace();
+let prefetchBusy = false;
+let workspaceReady = false,
+  workspaceTimer;
+function saveWorkspace() {
+  if (!workspaceReady) return;
+  const center = atlas.map.getCenter();
+  try {
+    localStorage.setItem(
+      'photo-map-workspace',
+      JSON.stringify({
+        version: 1,
+        map: { lat: center.lat, lng: center.lng, zoom: atlas.map.getZoom() },
+        mode: atlas.mode,
+        labels: $('show-labels').checked,
+        sidebar: !document.body.classList.contains('sidebar-collapsed'),
+        view: state.view,
+        sort: state.sort,
+        gallerySize: gallery.targetSize,
+        galleryLayout: gallery.layoutMode,
+      }),
+    );
+  } catch {
+    /* Browsing remains available if local storage is disabled/full. */
+  }
+}
+function scheduleWorkspace() {
+  clearTimeout(workspaceTimer);
+  workspaceTimer = setTimeout(saveWorkspace, 180);
+}
 const state = {
   items: new Map(),
   folders: [],
@@ -15,7 +53,16 @@ const state = {
   area: [],
   firstScan: false,
 };
-let atlas, gallery, areaGallery, filterTimer, toastTimer, removeTarget, previewTimer;
+let atlas,
+  gallery,
+  areaGallery,
+  filterTimer,
+  toastTimer,
+  removeTarget,
+  previewTimer,
+  neighborTimer,
+  previewCache,
+  photoZoom;
 let catalog,
   filterRequest = 0,
   filterBusy = false,
@@ -53,6 +100,7 @@ function initCatalog() {
     }
     state.filtered = data.ids.map((id) => state.items.get(id)).filter(Boolean);
     state.dates = data.dates;
+    renderMonths(data.months || []);
     atlas.setItems(state.filtered);
     updateDates();
     updateSummary();
@@ -147,7 +195,11 @@ function updateSummary() {
   $('library-total').textContent = count(state.summary.total);
   $('located-total').textContent = count(located);
   $('visible-count').textContent = count(state.filtered.length);
-  $('visible-caption').textContent = isFiltered() ? 'matching memories' : 'on your map';
+  $('visible-caption').textContent = isFiltered()
+    ? 'matching memories'
+    : state.view === 'map'
+      ? 'on your map'
+      : 'in your gallery';
   $('unlocated-note').hidden = !state.summary.withoutGPS;
   $('unlocated-note').textContent =
     `${count(state.summary.withoutGPS)} files have no GPS location and aren’t shown on the map.`;
@@ -164,6 +216,7 @@ function updateSummary() {
   $('browse-area').disabled = !state.filtered.length;
   $('fit-map').disabled = !state.filtered.length;
   $('reset-filters').hidden = !isFiltered();
+  updateViewDates();
   $('status-secondary').textContent = located
     ? `${count(state.folders.length)} source ${state.folders.length === 1 ? 'folder' : 'folders'} · Originals untouched`
     : 'Made for your memories';
@@ -219,17 +272,10 @@ function setView(view) {
   $('view-gallery').classList.toggle('selected', !mapView);
   $('view-map').setAttribute('aria-pressed', mapView);
   $('view-gallery').setAttribute('aria-pressed', !mapView);
-  $('breadcrumb-view').textContent = mapView ? 'Map explorer' : 'Photo gallery';
-  $('view-title').textContent = mapView
-    ? 'Your world, in pictures.'
-    : 'A collection of good moments.';
-  $('view-eyebrow').textContent = mapView
-    ? 'EVERY MEMORY HAS A PLACE'
-    : 'THE BIG DAYS. THE LITTLE DETAILS.';
-  $('view-description').textContent = mapView
-    ? 'Bring your photos together. Rediscover where you’ve been.'
-    : 'All your geotagged memories, together in one place.';
+  $('view-title').textContent = mapView ? 'Map explorer' : 'Photo gallery';
   closeArea();
+  updateSummary();
+  scheduleWorkspace();
   if (mapView) requestAnimationFrame(() => atlas.resume());
   else gallery.setItems(state.filtered);
 }
@@ -240,6 +286,7 @@ function showArea(items, title = 'Photos in this area') {
     `${count(items.length)} ${items.length === 1 ? 'memory' : 'memories'} to rediscover`;
   $('area-panel').hidden = false;
   areaGallery.setItems(state.area);
+  updateViewDates();
   $('area-close').focus({ preventScroll: true });
 }
 function closeArea() {
@@ -247,6 +294,51 @@ function closeArea() {
   state.area = [];
   areaGallery?.setItems([]);
   atlas?.cancelSelection();
+  updateViewDates();
+}
+function viewItems() {
+  if (!$('area-panel').hidden) return state.area;
+  if (state.view === 'gallery') return state.filtered;
+  const bounds = atlas.bounds();
+  return state.filtered.filter((p) => PhotoModel.inBounds(p, bounds));
+}
+function updateViewDates() {
+  if (!atlas) return;
+  const dated = (p) => p.date && Number.isFinite(Date.parse(p.date));
+  const bounds = atlas.bounds();
+  const hasDates = !$('area-panel').hidden
+    ? state.area.some(dated)
+    : state.filtered.some(
+        (p) => dated(p) && (state.view === 'gallery' || PhotoModel.inBounds(p, bounds)),
+      );
+  $('use-view-dates').disabled = !hasDates;
+  $('area-use-dates').disabled = !state.area.some(dated);
+  const context = !$('area-panel').hidden
+    ? 'the open area panel'
+    : state.view === 'map'
+      ? 'the current map area'
+      : 'the gallery results';
+  $('use-view-dates').title = hasDates
+    ? `Apply the earliest and latest photo dates from ${context} to the timeline`
+    : `No dated photos in ${context}`;
+}
+function useViewDates() {
+  const { min, max } = PhotoModel.dateBounds(viewItems());
+  if (!min || !max) return;
+  state.filters.from = min;
+  state.filters.to = max;
+  updateDates();
+  applyFilters();
+  toast(`Timeline set to ${min} – ${max}. Undated photos stay visible.`);
+}
+function toggleSidebar(show = document.body.classList.contains('sidebar-collapsed')) {
+  document.body.classList.toggle('sidebar-collapsed', !show);
+  $('sidebar').inert = !show;
+  $('sidebar-toggle').setAttribute('aria-expanded', String(show));
+  const label = `${show ? 'Hide' : 'Show'} library and filters`;
+  $('sidebar-toggle').setAttribute('aria-label', label);
+  $('sidebar-toggle').title = label;
+  scheduleWorkspace();
 }
 function dateNumber(date) {
   return Date.parse(date + 'T00:00:00Z') / 86400000;
@@ -289,6 +381,31 @@ function updateDates() {
     (days ? Math.max(0, ((dateNumber(max) - dateNumber(to)) / days) * 100) : 0) + '%';
   $('range-from').disabled = !days;
   $('range-to').disabled = !days;
+}
+function renderMonths(months) {
+  const chart = $('timeline-months');
+  const focused = document.activeElement?.dataset.month;
+  chart.replaceChildren();
+  const max = Math.max(1, ...months.map((entry) => entry.count));
+  for (const entry of months) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.month = entry.month;
+    const label = new Date(entry.month + '-01T12:00:00').toLocaleDateString(undefined, {
+      month: 'long',
+      year: 'numeric',
+    });
+    button.title = `${label} · ${count(entry.count)} photos — click to select this month`;
+    button.setAttribute('aria-label', `${label}: ${count(entry.count)} photos`);
+    button.disabled = !entry.count;
+    button.style.setProperty('--month-height', `${Math.max(8, (entry.count / max) * 100)}%`);
+    const selected =
+      (!state.filters.from || entry.month >= state.filters.from.slice(0, 7)) &&
+      (!state.filters.to || entry.month <= state.filters.to.slice(0, 7));
+    button.setAttribute('aria-pressed', String(selected));
+    chart.append(button);
+    if (focused === entry.month) button.focus({ preventScroll: true });
+  }
 }
 function changeDate(which, value) {
   const from = which === 'from' ? value : state.filters.from || state.dates.min;
@@ -359,6 +476,9 @@ function closeViewer() {
   $('viewer-video').removeAttribute('src');
   $('viewer-video').load();
   $('viewer-image').removeAttribute('src');
+  clearTimeout(neighborTimer);
+  photoZoom.reset();
+  state.viewer.detailPromise = null;
   $('lightbox').close();
   state.viewer.index = -1;
 }
@@ -368,11 +488,65 @@ function moveViewer(delta) {
   viewer.index = (viewer.index + delta + viewer.list.length) % viewer.list.length;
   showViewerItem();
 }
+function updateViewerNeighbors() {
+  const { list, index } = state.viewer;
+  for (const [direction, offset] of [
+    ['prev', -1],
+    ['next', 1],
+  ]) {
+    const button = $('viewer-' + direction);
+    const frame = $('viewer-' + direction + '-preview');
+    frame.replaceChildren();
+    button.disabled = button.hidden = list.length < 2;
+    if (list.length < 2) {
+      button.removeAttribute('title');
+      continue;
+    }
+    const item = list[(index + offset + list.length) % list.length];
+    button.title = `${direction === 'prev' ? 'Previous' : 'Next'}: ${item.filename}`;
+    const fallback = document.createElement('span');
+    fallback.className = 'viewer-neighbor-fallback';
+    fallback.innerHTML = icon(item.type === 'video' ? 'video' : 'image');
+    frame.append(fallback);
+    if (item.hasThumbnail) {
+      const image = document.createElement('img');
+      image.alt = '';
+      image.decoding = 'async';
+      image.addEventListener(
+        'load',
+        () => {
+          fallback.hidden = true;
+        },
+        { once: true },
+      );
+      image.addEventListener(
+        'error',
+        () => {
+          image.remove();
+        },
+        { once: true },
+      );
+      image.src = PhotoModel.thumb(item);
+      frame.append(image);
+    }
+    if (item.type === 'video') {
+      const badge = document.createElement('span');
+      badge.className = 'viewer-neighbor-video';
+      badge.innerHTML = icon('play');
+      frame.append(badge);
+    }
+  }
+}
 function showViewerItem() {
   const p = viewerItem();
   if (!p) return;
   const token = ++state.viewer.token;
   clearTimeout(previewTimer);
+  clearTimeout(neighborTimer);
+  state.viewer.detailPromise = null;
+  state.viewer.full = false;
+  photoZoom.reset(p.type !== 'video');
+  document.querySelector('.viewer-zoom-controls').hidden = p.type === 'video';
   const image = $('viewer-image'),
     video = $('viewer-video');
   video.pause();
@@ -395,44 +569,98 @@ function showViewerItem() {
   $('viewer-path').textContent = p.originalPath;
   $('viewer-position').textContent =
     `${state.viewer.index + 1} / ${count(state.viewer.list.length)}  ·  ${p.type === 'video' ? 'VIDEO' : 'PHOTO'}`;
-  $('viewer-prev').disabled = $('viewer-next').disabled = state.viewer.list.length < 2;
+  updateViewerNeighbors();
   video.onerror = () => {
     if (state.viewer.token === token)
       viewerError(
         'This video cannot be played here. Choose “Open original” to use your default player.',
       );
   };
-  previewTimer = setTimeout(async () => {
-    try {
-      const preview = await api.getPreview(p.id);
-      if (token !== state.viewer.token || !$('lightbox').open) return;
-      if (preview.video) {
-        image.hidden = true;
-        video.hidden = false;
-        video.poster = preview.image;
-        video.src = preview.video;
-        video.load();
-        $('viewer-loading').hidden = true;
-      } else {
-        const preload = new Image();
-        preload.onload = () => {
-          if (token === state.viewer.token && $('lightbox').open) {
-            image.src = preview.image;
-            image.hidden = false;
-            $('viewer-loading').hidden = true;
-          }
-        };
-        preload.onerror = () => {
-          if (token === state.viewer.token)
-            viewerError('The preview is unavailable. Try opening the original file.');
-        };
-        preload.src = preview.image;
+  const ready = previewCache.peek(p);
+  if (ready) displayPreview(ready, p, token);
+  else
+    previewTimer = setTimeout(async () => {
+      try {
+        const preview = await previewCache.load(p);
+        if (token !== state.viewer.token || !$('lightbox').open) return;
+        displayPreview(preview, p, token);
+      } catch (err) {
+        if (token === state.viewer.token)
+          viewerError(`${err.message}. You can try “Open original”.`);
       }
-    } catch (err) {
-      if (token === state.viewer.token) viewerError(`${err.message}. You can try “Open original”.`);
-    }
-  }, 90);
+    }, 90);
 }
+function displayPreview(preview, item, token) {
+  if (state.viewer.full) return;
+  if (preview.video) {
+    $('viewer-image').hidden = true;
+    $('viewer-video').hidden = false;
+    $('viewer-video').poster = preview.image;
+    $('viewer-video').src = preview.video;
+    $('viewer-video').load();
+  } else {
+    $('viewer-image').src = preview.image;
+    $('viewer-image').hidden = false;
+    photoZoom.render();
+  }
+  $('viewer-loading').hidden = true;
+  // Sequential, cancellable lookahead: at most one speculative request at a time.
+  neighborTimer = setTimeout(() => prefetchNeighbors(token), 250);
+}
+async function prefetchNeighbors(token) {
+  if (token !== state.viewer.token || !$('lightbox').open) return;
+  if (prefetchBusy) {
+    neighborTimer = setTimeout(() => prefetchNeighbors(token), 150);
+    return;
+  }
+  const { list, index } = state.viewer;
+  if (list.length < 2) return;
+  prefetchBusy = true;
+  try {
+    const neighbors = new Set([
+      list[(index + 1) % list.length],
+      list[(index - 1 + list.length) % list.length],
+    ]);
+    for (const neighbor of neighbors) {
+      if (token !== state.viewer.token || !$('lightbox').open) return;
+      try {
+        await previewCache.load(neighbor, { prefetch: true });
+      } catch {
+        /* Retry on selection. */
+      }
+    }
+  } finally {
+    prefetchBusy = false;
+  }
+}
+
+async function loadPhotoDetail(actual = false) {
+  const item = viewerItem(),
+    token = state.viewer.token;
+  if (!item || item.type === 'video') return;
+  try {
+    if (!state.viewer.detailPromise)
+      state.viewer.detailPromise = previewCache.load(item, { full: true });
+    $('viewer-loading').hidden = false;
+    const preview = await state.viewer.detailPromise;
+    if (token !== state.viewer.token || !$('lightbox').open) return;
+    state.viewer.full = true;
+    $('viewer-image').src = preview.image;
+    $('viewer-image').hidden = false;
+    // decode() waits for the element to adopt the new intrinsic dimensions.
+    await $('viewer-image').decode();
+    if (token !== state.viewer.token) return;
+    if (actual) photoZoom.actualPixels();
+    else photoZoom.render();
+    $('viewer-loading').hidden = true;
+  } catch (err) {
+    if (token === state.viewer.token) {
+      state.viewer.detailPromise = null;
+      viewerError(`Full-resolution photo unavailable: ${err.message}`);
+    }
+  }
+}
+
 function viewerError(message) {
   $('viewer-loading').hidden = true;
   $('viewer-error').textContent = message;
@@ -456,6 +684,63 @@ function updateFullscreen() {
   requestAnimationFrame(() => atlas.resume());
 }
 function setupEvents() {
+  $('timeline-months').addEventListener('click', (event) => {
+    const month = event.target.closest('[data-month]')?.dataset.month;
+    if (!month) return;
+    const [year, number] = month.split('-').map(Number);
+    const lastDay = new Date(year, number, 0).getDate();
+    state.filters.from = month + '-01';
+    state.filters.to = `${month}-${lastDay}`;
+    // Keep the date fields inside the library's available dates.
+    if (state.filters.from < state.dates.min) state.filters.from = state.dates.min;
+    if (state.filters.to > state.dates.max) state.filters.to = state.dates.max;
+    updateDates();
+    applyFilters();
+  });
+  $('timeline-months').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...$('timeline-months').querySelectorAll('button:not(:disabled)')];
+    const index = buttons.indexOf(document.activeElement);
+    if (index < 0) return;
+    event.preventDefault();
+    buttons[
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowLeft' ? -1 : 1)))
+    ]?.focus();
+  });
+  const galleryOptions = () => {
+    gallery.setOptions(Number($('gallery-size').value), $('gallery-layout').value);
+    scheduleWorkspace();
+  };
+  $('gallery-size').addEventListener('input', galleryOptions);
+  $('gallery-layout').addEventListener('change', galleryOptions);
+  $('viewer-zoom-in').addEventListener('click', () => {
+    photoZoom.change(photoZoom.zoom * 1.4);
+    loadPhotoDetail();
+  });
+  $('viewer-zoom-out').addEventListener('click', () => photoZoom.change(photoZoom.zoom / 1.4));
+  $('viewer-fit').addEventListener('click', () => photoZoom.fit());
+  $('viewer-actual').addEventListener('click', () => loadPhotoDetail(true));
+  $('sidebar-toggle').addEventListener('click', () => toggleSidebar());
+  $('use-view-dates').addEventListener('click', useViewDates);
+  $('area-use-dates').addEventListener('click', useViewDates);
+  atlas.map.on('moveend', updateViewDates);
+  atlas.map.on('moveend', scheduleWorkspace);
+  window.addEventListener('beforeunload', saveWorkspace);
+  document.querySelectorAll('[data-map-mode]').forEach((button) => {
+    button.addEventListener('click', () => {
+      atlas.setMode(button.dataset.mapMode);
+      scheduleWorkspace();
+      document.querySelectorAll('[data-map-mode]').forEach((option) => {
+        const selected = option === button;
+        option.classList.toggle('selected', selected);
+        option.setAttribute('aria-pressed', String(selected));
+      });
+    });
+  });
   $('map-fullscreen').addEventListener('click', () => attempt(toggleFullscreen));
   document.addEventListener('fullscreenchange', updateFullscreen);
   document
@@ -481,7 +766,10 @@ function setupEvents() {
   $('fit-map').addEventListener('click', () => atlas.fit());
   $('zoom-in').addEventListener('click', () => atlas.map.zoomIn());
   $('zoom-out').addEventListener('click', () => atlas.map.zoomOut());
-  $('show-labels').addEventListener('change', (e) => atlas.setLabels(e.target.checked));
+  $('show-labels').addEventListener('change', (e) => {
+    atlas.setLabels(e.target.checked);
+    scheduleWorkspace();
+  });
   $('retry-tiles').addEventListener('click', () => atlas.retryTiles());
   $('browse-area').addEventListener('click', () =>
     showArea(state.filtered.filter((p) => PhotoModel.inBounds(p, atlas.bounds()))),
@@ -504,6 +792,7 @@ function setupEvents() {
   $('clear-empty-filters').addEventListener('click', resetFilters);
   $('sort-order').addEventListener('change', (e) => {
     state.sort = e.target.value;
+    scheduleWorkspace();
     applyFilters();
   });
   $('date-from').addEventListener('change', (e) => changeDate('from', e.target.value));
@@ -590,6 +879,7 @@ function setupEvents() {
     if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === '/') {
       e.preventDefault();
+      toggleSidebar(true);
       if (document.fullscreenElement) document.exitFullscreen().then(() => $('search').focus());
       else $('search').focus();
     }
@@ -636,6 +926,12 @@ function setupEvents() {
 }
 async function init() {
   initCatalog();
+  previewCache = new PreviewCache(api);
+  photoZoom = new PhotoZoom(
+    document.querySelector('.viewer-stage'),
+    $('viewer-image'),
+    loadPhotoDetail,
+  );
   atlas = new PhotoAtlas({ onPhoto: photoById, onArea: showArea, onError: error });
   gallery = new VirtualGallery($('gallery-scroll'), $('gallery-space'), openViewer);
   areaGallery = new VirtualGallery($('area-scroll'), $('area-space'), openViewer, true);
@@ -649,11 +945,39 @@ async function init() {
     return;
   }
   setupEvents();
+  const map = workspace.map;
+  const restoreMap =
+    map &&
+    [map.lat, map.lng, map.zoom].every(Number.isFinite) &&
+    Math.abs(map.lat) <= 85 &&
+    map.zoom >= 2 &&
+    map.zoom <= 22;
+  if (restoreMap) atlas.map.setView([map.lat, map.lng], map.zoom, { animate: false });
+  if (['auto', 'heat', 'bubbles'].includes(workspace.mode))
+    document.querySelector(`[data-map-mode="${workspace.mode}"]`).click();
+  if (typeof workspace.labels === 'boolean') {
+    $('show-labels').checked = workspace.labels;
+    atlas.setLabels(workspace.labels);
+  }
+  toggleSidebar(workspace.sidebar !== false);
+  if (['newest', 'oldest', 'name'].includes(workspace.sort))
+    state.sort = $('sort-order').value = workspace.sort;
+  if (Number.isFinite(workspace.gallerySize))
+    $('gallery-size').value = Math.max(150, Math.min(360, workspace.gallerySize));
+  if (['grid', 'natural'].includes(workspace.galleryLayout))
+    $('gallery-layout').value = workspace.galleryLayout;
+  gallery.setOptions(Number($('gallery-size').value), $('gallery-layout').value);
+  if (workspace.view === 'gallery') setView('gallery');
+  workspaceReady = true;
   const data = await attempt(() => api.getLibrary());
   if (data) {
-    snapshot(data, true);
+    snapshot(data, !restoreMap);
     if (state.items.size)
       $('status-text').textContent = 'Library ready · Everything stays on your device';
+    if (data.needsRescan && !data.scan) {
+      toast('Refreshing older thumbnails in the background. You can keep exploring.');
+      await startScan();
+    }
   }
 }
 init().catch((err) => error(err.message));

@@ -25,13 +25,19 @@ Scans batch renderer messages at 250 ms intervals; the UI coalesces live catalog
 
 Unavailable roots/subfolders are tracked. Their existing records are preserved during reconciliation. A removed source folder only retires entries not covered by any remaining source. File-path comparisons use Windows case rules on Windows and case-sensitive rules on Linux. Folder removal resolves aliases just like addition, including Windows short paths and junctions, and still accepts the stored path when a drive is disconnected.
 
-The first v2 rescan refreshes legacy thumbnails. Full previews are not generated until requested. Small previews from a v1 library remain usable until their source is reprocessed.
+The shared `CACHE_VERSION` in `lib/core.cjs` versions generated media and metadata per entry. Increment it when the processing format changes. Missing or mismatched entry versions set `needsRescan` in the startup snapshot, which starts one background rescan in the renderer unless a scan is already running. Successful entries are persisted at the current version; disconnected sources keep their old versions for a future restart. Version 3 replaced cropped thumbnails with proportion-preserving thumbnails; version 4 records thumbnail dimensions for natural gallery layouts. Thumbnail URLs include this version so regenerated files bypass the old browser cache. `lib/cache.cjs` decodes cached files to detect corruption and memoizes validation by size, mtime, and ctime. Thumbnail access repairs missing/broken files with deduplicated work; unchanged rescans validate thumbnails too. Corrupt standard and full-resolution previews regenerate on demand. Full previews are not generated until requested. Small previews from a v1 library remain usable until their source is reprocessed.
 
 ## Media serving
 
 The `media://` protocol only resolves validated IDs already present in the library. There is no renderer-supplied filesystem path. Cached images are fetched via encoded file URLs, preserving spaces, Unicode, `#`, and Windows drive paths. Original videos use explicit byte-range responses for seeking. Shell actions take entry IDs and resolve their path/location in the main process.
 
-Thumbnails are 320 × 240 JPEGs; photo previews fit inside 1920 × 1920. Video posters are extracted at 1600 pixels wide on demand, with a zero-second fallback for short clips. Original photos are never rewritten. HEIC uses Sharp when supported, then a bundled WASM decoder in the media worker.
+Thumbnails are JPEGs fitting inside 320 × 320 with autorotation and no cropping or enlargement; gallery images use `object-fit: contain`, while map pins remain square crops; photo previews fit inside 1920 × 1920. Actual-pixel viewing creates a separate full-resolution JPEG on demand. Up to five decoded standard previews are retained in the renderer; neighbor prefetch runs sequentially through a separate worker so it does not queue ahead of active requests. Video posters are extracted at 1600 pixels wide on demand, with a zero-second fallback for short clips. Original photos are never rewritten. HEIC uses Sharp when supported, then a bundled WASM decoder in the media worker.
+
+## Workspace and browsing
+
+The renderer stores versioned workspace preferences in local storage, tolerates invalid values, and restores the map center/zoom, overlay mode, labels, sidebar, view, sort, and gallery size/layout. Native window bounds and maximized state use a separate atomic `window-state.json`; restoration clamps bounds to an available display. Fullscreen bounds are not saved.
+
+Monthly counts are computed in the catalog worker using non-date filters, so all relevant months remain selectable while a date range is active. The gallery supports uniform and natural proportions with virtualized columns and binary searches for visible cards. `PhotoZoom` handles fit/actual-pixel scaling, pointer-centered wheel zoom, clamped dragging, and reset on navigation.
 
 ## Verification
 

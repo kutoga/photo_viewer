@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('photoMap', {
   removeFolder: (dir) => invoke('folders:remove', dir),
   startScan: () => invoke('scan:start'),
   cancelScan: () => invoke('scan:cancel'),
-  getPreview: (id) => invoke('media:preview', id),
+  getPreview: (id, options) => invoke('media:preview', id, options),
   reveal: (id) => invoke('media:reveal', id),
   openOriginal: (id) => invoke('media:open', id),
   openMaps: (id) => invoke('media:maps', id),

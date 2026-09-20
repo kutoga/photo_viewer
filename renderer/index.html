@@ -13,7 +13,7 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Library and filters">
+      <aside class="sidebar" id="sidebar" aria-label="Library and filters">
         <a class="brand" href="#" id="brand-home" aria-label="Photo Map home"
           ><span class="brand-mark" data-icon="aperture"></span
           ><span>Photo Map<small>A WORLD OF MEMORIES</small></span></a
@@ -86,9 +86,21 @@
       </aside>
       <main class="workspace">
         <header class="topbar">
-          <div class="breadcrumb">
-            <span>Your library</span><span data-icon="chevron-right"></span
-            ><strong id="breadcrumb-view">Map explorer</strong>
+          <div class="workspace-heading">
+            <button
+              id="sidebar-toggle"
+              class="icon-button"
+              aria-label="Hide library and filters"
+              aria-controls="sidebar"
+              aria-expanded="true"
+              title="Hide library and filters"
+            >
+              <span data-icon="sidebar"></span>
+            </button>
+            <h1 id="view-title">Map explorer</h1>
+            <div class="heading-summary" id="heading-summary">
+              <strong id="visible-count">0</strong><span id="visible-caption">on your map</span>
+            </div>
           </div>
           <div class="topbar-actions">
             <div class="view-switch" role="group" aria-label="View">
@@ -103,17 +115,6 @@
             </button>
           </div>
         </header>
-        <section class="view-heading">
-          <div>
-            <div class="eyebrow" id="view-eyebrow">EVERY MEMORY HAS A PLACE</div>
-            <h1 id="view-title">Your world, in pictures.</h1>
-            <p id="view-description">Bring your photos together. Rediscover where you’ve been.</p>
-          </div>
-          <div class="heading-summary" id="heading-summary">
-            <span class="summary-number" id="visible-count">0</span
-            ><span id="visible-caption">on your map</span>
-          </div>
-        </section>
         <div id="scan-panel" class="scan-panel" hidden role="status" aria-live="polite">
           <div class="scan-spinner"></div>
           <div class="scan-copy">
@@ -134,9 +135,31 @@
           <div class="map-view" id="map-view">
             <div id="map" aria-label="Interactive photo map"></div>
             <div class="map-toolbar">
-              <div class="map-indicator">
-                <i class="dot"></i><span id="map-mode">Satellite view</span>
+              <div class="map-display-switch" role="group" aria-label="Map display">
+                <button
+                  data-map-mode="auto"
+                  class="selected"
+                  aria-pressed="true"
+                  title="Switch from heatmap to clusters as you zoom"
+                >
+                  Auto
+                </button>
+                <button
+                  data-map-mode="heat"
+                  aria-pressed="false"
+                  title="Show a heatmap at every zoom level"
+                >
+                  Heatmap
+                </button>
+                <button
+                  data-map-mode="bubbles"
+                  aria-pressed="false"
+                  title="Show numbered bubbles at every zoom level"
+                >
+                  Bubbles
+                </button>
               </div>
+              <div class="toolbar-divider"></div>
               <button
                 id="fit-map"
                 class="map-button"
@@ -170,8 +193,9 @@
               here.<button id="retry-tiles" class="text-button">Retry</button>
             </div>
             <div class="map-caption">
-              <span data-icon="compass"></span
-              ><span id="map-hint">Zoom in to get a little closer.</span>
+              <span data-icon="compass"></span><strong id="map-mode">Photo clusters</strong
+              ><span class="caption-divider">·</span
+              ><span id="map-hint">Click a photo or a bubble to explore.</span>
             </div>
             <div class="map-controls">
               <button id="zoom-in" aria-label="Zoom in" title="Zoom in">
@@ -186,14 +210,32 @@
           </div>
           <div class="gallery-view" id="gallery-view" hidden>
             <div class="gallery-toolbar">
-              <span id="gallery-count">All memories</span
-              ><label
-                >Sort by<select id="sort-order">
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="name">File name</option>
-                </select></label
-              >
+              <span id="gallery-count">All memories</span>
+              <div class="gallery-options">
+                <label
+                  >Size<input
+                    id="gallery-size"
+                    type="range"
+                    min="150"
+                    max="360"
+                    step="10"
+                    value="220"
+                    aria-label="Thumbnail size"
+                /></label>
+                <label
+                  >Layout<select id="gallery-layout" aria-label="Gallery layout">
+                    <option value="natural">Natural proportions</option>
+                    <option value="grid">Uniform grid</option>
+                  </select></label
+                >
+                <label
+                  >Sort by<select id="sort-order">
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="name">File name</option>
+                  </select></label
+                >
+              </div>
             </div>
             <div id="gallery-scroll" class="gallery-scroll" aria-label="Photo gallery">
               <div id="gallery-space" class="gallery-space"></div>
@@ -234,6 +276,14 @@
                 <span data-icon="close"></span>
               </button>
             </div>
+            <button
+              id="area-use-dates"
+              class="view-dates-button"
+              disabled
+              title="Apply the earliest and latest dates of these photos to the timeline"
+            >
+              <span data-icon="calendar"></span>Use these dates
+            </button>
             <div id="area-scroll" class="gallery-scroll">
               <div id="area-space" class="gallery-space"></div>
             </div>
@@ -247,11 +297,25 @@
               ><span id="timeline-caption">Add photos to explore by date</span>
             </div>
           </div>
+          <button
+            id="use-view-dates"
+            class="view-dates-button"
+            disabled
+            title="Apply the dates of photos in the current map area to the timeline"
+          >
+            <span data-icon="focus"></span>Use view dates
+          </button>
           <div class="timeline-controls">
             <label class="date-input"
               ><span>From</span><input id="date-from" type="date" aria-label="From date" disabled
             /></label>
             <div class="range-wrap">
+              <div
+                id="timeline-months"
+                class="timeline-months"
+                role="group"
+                aria-label="Photo counts by month"
+              ></div>
               <div class="range-track"><div id="range-fill"></div></div>
               <input
                 id="range-from"
@@ -293,14 +357,32 @@
     </div>
     <dialog id="lightbox" class="lightbox" aria-label="Media viewer">
       <div class="viewer-top">
-        <span id="viewer-position"></span
-        ><button class="icon-button dark" id="viewer-close" aria-label="Close viewer">
+        <span id="viewer-position"></span>
+        <div class="viewer-zoom-controls" role="group" aria-label="Photo zoom">
+          <button id="viewer-zoom-out" title="Zoom out" aria-label="Zoom out photo">
+            <span data-icon="minus"></span>
+          </button>
+          <output id="viewer-zoom-level">100%</output>
+          <button id="viewer-zoom-in" title="Zoom in" aria-label="Zoom in photo">
+            <span data-icon="plus"></span>
+          </button>
+          <button id="viewer-fit" aria-pressed="true">Fit</button>
+          <button
+            id="viewer-actual"
+            aria-pressed="false"
+            title="Load the full-resolution photo at actual pixels"
+          >
+            Actual pixels
+          </button>
+        </div>
+        <button class="icon-button dark" id="viewer-close" aria-label="Close viewer">
           <span data-icon="close"></span>
         </button>
       </div>
       <div class="viewer-body">
         <button class="viewer-nav" id="viewer-prev" aria-label="Previous photo">
-          <span data-icon="chevron-left"></span>
+          <span class="viewer-neighbor" id="viewer-prev-preview" aria-hidden="true"></span>
+          <span class="viewer-nav-label"><span data-icon="chevron-left"></span>Previous</span>
         </button>
         <div class="viewer-stage">
           <img id="viewer-image" alt="" /><video
@@ -315,7 +397,8 @@
           <div id="viewer-error" class="viewer-error" hidden></div>
         </div>
         <button class="viewer-nav" id="viewer-next" aria-label="Next photo">
-          <span data-icon="chevron-right"></span>
+          <span class="viewer-neighbor" id="viewer-next-preview" aria-hidden="true"></span>
+          <span class="viewer-nav-label">Next<span data-icon="chevron-right"></span></span>
         </button>
       </div>
       <div class="viewer-bottom">
@@ -362,8 +445,10 @@
           <div>
             <h3>See the big picture. Then get closer.</h3>
             <p>
-              Zoom out for a heatmap, or zoom in to see photo clusters. Click a cluster to explore
-              its memories. “Browse this area” shows photos inside the current map boundaries.
+              Auto switches from heatmap to photo clusters as you zoom. Choose Heatmap or Bubbles to
+              keep that display at every zoom level. Click a bubble to explore its memories. “Browse
+              this area” shows photos inside the current map boundaries. Hide the sidebar with the
+              button beside the page title to give the map more room.
             </p>
           </div>
         </article>
@@ -373,7 +458,10 @@
             <h3>Find a moment</h3>
             <p>
               Search a filename, choose a source folder, or narrow the timeline. Undated photos stay
-              visible. Switch to Gallery for a larger view of every matching memory.
+              visible. “Use view dates” applies the earliest and latest dates of photos in the
+              current map area, open area panel, or gallery results. Use “Use these dates” in an
+              area panel to focus on that selection. Reset the date range to see all dates again.
+              Switch to Gallery for a larger view of every matching memory.
             </p>
           </div>
         </article>
@@ -418,6 +506,8 @@
     <script src="model.js"></script>
     <script src="gallery.js"></script>
     <script src="map.js"></script>
+    <script src="preview-cache.js"></script>
+    <script src="photo-zoom.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -49,6 +49,27 @@
     }
     return { min, max };
   }
+  function monthlyCounts(items) {
+    const counts = new Map();
+    for (const item of items) {
+      if (!item.date) continue;
+      const value = day(item.date);
+      if (value) counts.set(value.slice(0, 7), (counts.get(value.slice(0, 7)) || 0) + 1);
+    }
+    const keys = [...counts.keys()].sort();
+    if (!keys.length) return [];
+    const first = Number(keys[0].slice(0, 4)) * 12 + Number(keys[0].slice(5)) - 1;
+    const lastKey = keys[keys.length - 1];
+    const last = Number(lastKey.slice(0, 4)) * 12 + Number(lastKey.slice(5)) - 1;
+    const result = [];
+    // Keep pathological date metadata from producing an unbounded chart.
+    if (last - first > 2400) return keys.map((month) => ({ month, count: counts.get(month) }));
+    for (let index = first; index <= last; index++) {
+      const month = `${String(Math.floor(index / 12)).padStart(4, '0')}-${String((index % 12) + 1).padStart(2, '0')}`;
+      result.push({ month, count: counts.get(month) || 0 });
+    }
+    return result;
+  }
   function inBounds(p, bounds) {
     let lng = p.lng;
     const [west, south, east, north] = bounds;
@@ -67,6 +88,8 @@
       return order === 'oldest' ? cmp : -cmp;
     });
   }
-  const thumb = (p) => p.thumbnailUrl || `media://thumbnails/${p.id}?v=${p.fileMtime || 0}`;
-  return { hasGPS, day, filter, dateBounds, inBounds, sort, thumb, withinFolder };
+  const thumb = (p) =>
+    p.thumbnailUrl ||
+    `media://thumbnails/${p.id}?v=${p.fileMtime || 0}&cache=${p.cacheVersion || 0}`;
+  return { hasGPS, day, filter, dateBounds, inBounds, sort, thumb, withinFolder, monthlyCounts };
 });

@@ -5,7 +5,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { Library } = require('../lib/library.cjs');
-const { fileId, atomicWrite } = require('../lib/core.cjs');
+const sharp = require('sharp');
+const { CACHE_VERSION, fileId, atomicWrite } = require('../lib/core.cjs');
 async function fixture(t, run) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'photo-map-lib-'));
   const source = path.join(root, 'photos'),
@@ -16,6 +17,9 @@ async function fixture(t, run) {
     run: async (kind, payload) => {
       calls.push(payload.file);
       if (run) await run(payload);
+      await sharp({ create: { width: 64, height: 48, channels: 3, background: '#789a87' } })
+        .jpeg()
+        .toFile(path.join(payload.cacheDir, 'thumbnails', `${payload.id}_thumb.jpg`));
       return {
         id: payload.id,
         originalPath: payload.file,
@@ -24,7 +28,7 @@ async function fixture(t, run) {
         lat: 0,
         lng: 0,
         hasThumbnail: true,
-        cacheVersion: 2,
+        cacheVersion: CACHE_VERSION,
         fileSize: payload.stat.size,
         fileMtime: payload.stat.mtimeMs,
       };
@@ -119,4 +123,64 @@ test('folder removal accepts the same aliased path used when adding it', async (
   assert.equal(lib.entries.size, 1);
   assert.equal([...lib.entries.values()][0].filename, 'keep.jpg');
   assert.equal(lib.dirs.length, 1);
+});
+
+test('missing and older cache versions refresh after restart, then skip unchanged media', async (t) => {
+  const { source, lib, calls } = await fixture(t);
+  await fs.writeFile(path.join(source, 'unversioned.jpg'), 'one');
+  await fs.writeFile(path.join(source, 'cropped.jpg'), 'two');
+  await lib.addFolders([source]);
+  await lib.startScan();
+  const entries = [...lib.entries.values()];
+  delete entries[0].cacheVersion;
+  entries[1].cacheVersion = 2;
+  await lib.persist();
+  // Read the persisted catalog just as a fresh process does.
+  lib.entries.clear();
+  await lib.init();
+  assert.equal(lib.snapshot().needsRescan, true);
+  const scan = await lib.startScan();
+  assert.equal(scan.updated, 2);
+  assert.equal(calls.length, 4);
+  assert.equal(lib.snapshot().needsRescan, false);
+  await lib.init();
+  assert.equal(lib.snapshot().needsRescan, false);
+  assert.equal((await lib.startScan()).skipped, 2);
+  assert.equal(calls.length, 4);
+});
+
+test('obsolete caches on a disconnected drive stay available and retry on a later startup', async (t) => {
+  const { root, source, lib } = await fixture(t);
+  await fs.writeFile(path.join(source, 'old.jpg'), 'one');
+  await lib.addFolders([source]);
+  await lib.startScan();
+  delete [...lib.entries.values()][0].cacheVersion;
+  await lib.persist();
+  await fs.rename(source, path.join(root, 'unplugged'));
+  await lib.startScan();
+  assert.equal(lib.snapshot().items.length, 1);
+  assert.equal(lib.snapshot().needsRescan, true);
+  assert.equal(lib.snapshot().items[0].hasThumbnail, true);
+});
+
+test('unchanged sources regenerate missing and corrupt thumbnails, including on-demand repair', async (t) => {
+  const { source, lib, calls } = await fixture(t);
+  const file = path.join(source, 'repair.jpg');
+  await fs.writeFile(file, 'original');
+  await lib.addFolders([source]);
+  await lib.startScan();
+  const id = fileId(file),
+    thumbnail = path.join(lib.cacheDir, 'thumbnails', `${id}_thumb.jpg`);
+  await fs.rm(thumbnail);
+  assert.equal((await lib.startScan()).updated, 1);
+  assert.equal((await sharp(thumbnail).metadata()).width, 64);
+  await fs.writeFile(thumbnail, 'not a JPEG');
+  assert.equal((await lib.startScan()).updated, 1);
+  await fs.writeFile(thumbnail, 'broken again');
+  const before = calls.length;
+  await Promise.all([lib.thumbnail(id), lib.thumbnail(id), lib.thumbnail(id)]);
+  assert.equal(calls.length, before + 1, 'concurrent requests share one repair');
+  assert.equal((await sharp(thumbnail).metadata()).width, 64);
+  assert.equal(await fs.readFile(file, 'utf8'), 'original');
+  assert.equal((await lib.startScan()).skipped, 1);
 });

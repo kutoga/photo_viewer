@@ -18,13 +18,17 @@ Supported build targets are **Windows 10/11 x64** (installer and portable execut
 ## Explore your library
 
 1. Choose **Add photos** and select one or more folders. Subfolders are scanned automatically.
-2. Zoom out for a heatmap; zoom in for clusters and photo thumbnails. Click a cluster to explore it. Small clusters also expand on the map. Use **Fullscreen** or **F11** for an edge-to-edge map; press **Escape** to return.
+2. The map gets most of the window. Use the sidebar button beside **Map explorer** to hide library controls. **Auto** switches from heatmap to clusters as you zoom; **Heatmap** and **Bubbles** keep their display at every zoom level. Click a bubble to explore its photos. Use **Fullscreen** or **F11** for an edge-to-edge map; press **Escape** to return.
 3. Use **Browse this area** for photos inside the current map bounds, or switch to **Gallery** for all matching photos.
 4. Search filenames/folder paths, filter photos or videos, select a source folder, and narrow the timeline with the sliders or date pickers. Undated files stay visible.
-5. Open a photo for a larger preview. Use the arrow keys to navigate, open its coordinates in Google Maps, reveal the file, or open it in your default viewer. Press Escape to close.
+5. Open a photo for a larger preview. Click the small previous/next previews beside the image or use the arrow keys to navigate. Nearby previews preload after the current photo loads. Use the mouse wheel to zoom and drag to pan; double-click to switch between fitting the image and actual pixels. **Actual pixels** loads the original resolution on demand, including HEIC. You can also open its coordinates in Google Maps, reveal the file, or open it in your default viewer. Press Escape to close.
 6. Use the refresh button next to **Folders** to find additions, changes, and deletions. Scans can be stopped; completed work is saved.
 
 Only media with embedded GPS coordinates appears on the map or in the gallery. The sidebar reports files without GPS. Adding folders never moves or edits originals; removing a folder deletes only its library entries and cached images, and preserves entries covered by another source folder.
+
+**Use view dates** sets the timeline to the earliest and latest dates of photos in the current map boundaries, open area panel, or matching gallery results. Area panels also offer **Use these dates**. Undated photos stay visible, and the timeline reset restores all dates. Gallery thumbnails preserve portrait and panoramic proportions without cropping. **Natural proportions** gives portrait photos taller cards; use the **Size** slider to adjust thumbnails, or choose **Uniform grid**. Monthly bars above the date slider show photo counts for the current folder/search/media filters, independent of the selected date range. Hover for counts and click a bar to select that month.
+
+Map position, display mode, label visibility, sidebar state, gallery settings, and window size are restored after restarting. Date and search filters start fresh.
 
 ## Media support
 
@@ -38,8 +42,8 @@ Only media with embedded GPS coordinates appears on the map or in the gallery. T
 
 - A streaming directory walker avoids building a second complete file list before processing begins.
 - One or two background workers process media, leaving CPU capacity for browsing; Sharp and FFmpeg decoding use one native thread per worker. File operations and pending jobs are bounded.
-- Unchanged files are skipped using size, modification time, and cache version. Overlapping source folders are scanned once.
-- Scanning produces only 320 × 240 thumbnails. Larger previews are generated when opened, in a separate worker so viewing remains responsive during scanning.
+- Unchanged files are skipped using size, modification time, cache version, and thumbnail integrity. Missing or corrupt thumbnails regenerate on access or rescan, and corrupt full previews regenerate when opened. Overlapping source folders are scanned once.
+- Scanning produces thumbnails that fit within 320 × 320 while preserving the full image and its aspect ratio. Gallery cards show the whole thumbnail; map photo pins use square crops. Larger previews are generated when opened, with at most one neighboring preview being prefetched at a time in a separate worker. The viewer retains up to five decoded standard previews; original-resolution images load only when zooming.
 - Scan updates are batched. Filtering, sorting, date bounds, and spatial indexing run in Web Workers. Map rebuilding pauses while browsing the gallery. Visible clusters retain their own index until their replacement is displayed.
 - The gallery renders only visible rows and a small buffer. A 10,000-item UI test verifies fewer than 60 cards are mounted at a 1440 × 960 viewport.
 - Atomic, serialized JSON checkpoints write in small batches to keep desktop controls responsive and prevent overlapping saves from overwriting newer library state. Disconnected source folders retain their cached records.
@@ -64,7 +68,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the module map, persistence format, a
 
 ## Existing libraries
 
-Version 2 keeps the `photo-map` application data directory and reads the original `photo-map-cache/config.json` and `metadata.json` files. Cached photos and configured folders load immediately. The first rescan upgrades old thumbnails to the new format; subsequent scans skip unchanged successful entries. Corrupt metadata is reported instead of silently replaced.
+Version 2 keeps the `photo-map` application data directory and reads the original `photo-map-cache/config.json` and `metadata.json` files. Cached photos and configured folders load immediately. On startup, a missing or outdated per-entry cache version automatically starts a background rescan to regenerate thumbnails and refresh metadata. Cached photos remain browsable while this runs; disconnected drives retain their cached entries and are retried on a later startup. Subsequent scans skip unchanged successful entries at the current version. Corrupt metadata is reported instead of silently replaced.
 
 ## License
 

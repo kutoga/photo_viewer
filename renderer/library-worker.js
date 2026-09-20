@@ -22,12 +22,15 @@ onmessage = ({ data }) => {
         dates = PhotoModel.dateBounds(all);
         datesDirty = false;
       }
-      const matches = PhotoModel.sort(PhotoModel.filter(all, data.filters), data.sort);
+      const context = PhotoModel.filter(all, { ...data.filters, from: '', to: '' });
+      const months = PhotoModel.monthlyCounts(context);
+      const matches = PhotoModel.sort(PhotoModel.filter(context, data.filters), data.sort);
       postMessage({
         type: 'filtered',
         request: data.request,
         ids: matches.map((p) => p.id),
         dates,
+        months,
       });
     }
   } catch (err) {

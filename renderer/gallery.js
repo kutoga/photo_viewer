@@ -5,6 +5,9 @@ class VirtualGallery {
     this.space = space;
     this.onOpen = onOpen;
     this.small = small;
+    this.targetSize = small ? 130 : 220;
+    this.layoutMode = 'natural';
+    this.dimensions = new Map();
     this.items = [];
     this.cards = new Map();
     this.frame = 0;
@@ -26,10 +29,10 @@ class VirtualGallery {
         e.key
       ];
       const index = Math.max(0, Math.min(this.items.length - 1, Number(card.dataset.index) + step));
-      const top = Math.floor(index / this.cols) * this.rowHeight;
+      const top = this.positions[index].top;
       if (
         top < this.scroll.scrollTop ||
-        top + this.rowHeight > this.scroll.scrollTop + this.scroll.clientHeight
+        top + this.positions[index].height > this.scroll.scrollTop + this.scroll.clientHeight
       )
         this.scroll.scrollTop = top;
       this.render();
@@ -44,17 +47,48 @@ class VirtualGallery {
     this.layout();
     this.render();
   }
+  setOptions(size, mode) {
+    if (Number.isFinite(size)) this.targetSize = Math.max(150, Math.min(360, size));
+    if (['grid', 'natural'].includes(mode)) this.layoutMode = mode;
+    this.relayout();
+  }
+  relayout() {
+    const anchor = [...this.cards.keys()].find(
+      (index) => this.positions[index]?.top >= this.scroll.scrollTop,
+    );
+    const offset = anchor === undefined ? 0 : this.positions[anchor].top - this.scroll.scrollTop;
+    this.layout();
+    if (anchor !== undefined && this.positions[anchor])
+      this.scroll.scrollTop = this.positions[anchor].top - offset;
+    this.schedule();
+  }
   layout() {
     const width = this.scroll.clientWidth;
+    if (!width) return;
     this.padding = this.small ? 12 : 18;
     this.gap = this.small ? 9 : 16;
-    this.cols = Math.max(
-      1,
-      Math.floor((width - this.padding * 2 + this.gap) / (this.small ? 130 : 195)),
-    );
+    this.cols = Math.max(1, Math.floor((width - this.padding * 2 + this.gap) / this.targetSize));
     this.cardWidth = (width - this.padding * 2 - this.gap * (this.cols - 1)) / this.cols;
-    this.rowHeight = Math.round(this.cardWidth * 0.75 + 51 + this.gap);
-    this.space.style.height = `${Math.ceil(this.items.length / this.cols) * this.rowHeight + this.padding * 2}px`;
+    this.columns = Array.from({ length: this.cols }, () => []);
+    const heights = Array(this.cols).fill(this.padding);
+    this.positions = this.items.map((item, index) => {
+      const col = index % this.cols;
+      const ratio =
+        this.dimensions.get(item.id) || item.thumbnailWidth / item.thumbnailHeight || 4 / 3;
+      const pictureHeight =
+        this.layoutMode === 'natural'
+          ? this.cardWidth / Math.max(1 / 3, Math.min(4, ratio))
+          : this.cardWidth * 0.75;
+      const position = {
+        left: this.padding + col * (this.cardWidth + this.gap),
+        top: heights[col],
+        height: Math.round(pictureHeight + 51),
+      };
+      heights[col] += position.height + this.gap;
+      this.columns[col].push(index);
+      return position;
+    });
+    this.space.style.height = `${Math.max(...heights) + this.padding}px`;
   }
   schedule() {
     if (this.frame) return;
@@ -64,22 +98,29 @@ class VirtualGallery {
     });
   }
   render() {
-    if (!this.scroll.clientWidth || !this.rowHeight) return;
-    const first =
-      Math.max(0, Math.floor((this.scroll.scrollTop - this.padding) / this.rowHeight) - 1) *
-      this.cols;
-    const end = Math.min(
-      this.items.length,
-      (Math.ceil((this.scroll.scrollTop + this.scroll.clientHeight) / this.rowHeight) + 1) *
-        this.cols,
-    );
-    // Keep only visible rows and a single row of overscan in the DOM.
+    if (!this.scroll.clientWidth || !this.positions) return;
+    const top = this.scroll.scrollTop - 200;
+    const bottom = this.scroll.scrollTop + this.scroll.clientHeight + 200;
+    const visible = [];
+    for (const column of this.columns) {
+      let lo = 0,
+        hi = column.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1,
+          pos = this.positions[column[mid]];
+        if (pos.top + pos.height < top) lo = mid + 1;
+        else hi = mid;
+      }
+      for (let i = lo; i < column.length && this.positions[column[i]].top < bottom; i++)
+        visible.push(column[i]);
+    }
+    const wanted = new Set(visible);
     for (const [index, card] of this.cards)
-      if (index < first || index >= end) {
+      if (!wanted.has(index)) {
         card.remove();
         this.cards.delete(index);
       }
-    for (let index = first; index < end; index++) {
+    for (const index of visible.sort((a, b) => a - b)) {
       const p = this.items[index];
       let card = this.cards.get(index);
       if (!card) {
@@ -95,6 +136,20 @@ class VirtualGallery {
           img.alt = '';
           img.loading = 'lazy';
           img.decoding = 'async';
+          img.addEventListener(
+            'load',
+            () => {
+              const ratio = img.naturalWidth / img.naturalHeight;
+              if (!ratio || this.dimensions.get(p.id) === ratio) return;
+              this.dimensions.set(p.id, ratio);
+              if (!this.dimensionFrame)
+                this.dimensionFrame = requestAnimationFrame(() => {
+                  this.dimensionFrame = 0;
+                  this.relayout();
+                });
+            },
+            { once: true },
+          );
           img.addEventListener(
             'error',
             () => {
@@ -131,10 +186,10 @@ class VirtualGallery {
         this.cards.set(index, card);
       }
       Object.assign(card.style, {
-        left: `${this.padding + (index % this.cols) * (this.cardWidth + this.gap)}px`,
-        top: `${this.padding + Math.floor(index / this.cols) * this.rowHeight}px`,
+        left: `${this.positions[index].left}px`,
+        top: `${this.positions[index].top}px`,
         width: `${this.cardWidth}px`,
-        height: `${this.rowHeight - this.gap}px`,
+        height: `${this.positions[index].height}px`,
       });
     }
   }
