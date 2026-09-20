@@ -550,6 +550,8 @@ function showViewerItem() {
   const image = $('viewer-image'),
     video = $('viewer-video');
   video.pause();
+  video.onloadedmetadata = null;
+  video.style.cssText = '';
   video.removeAttribute('src');
   video.load();
   video.hidden = true;
@@ -596,17 +598,51 @@ function displayPreview(preview, item, token) {
   if (preview.video) {
     $('viewer-image').hidden = true;
     $('viewer-video').hidden = false;
+    fitViewerVideo(item);
     $('viewer-video').poster = preview.image;
+    $('viewer-video').onloadedmetadata = () => fitViewerVideo(item);
     $('viewer-video').src = preview.video;
     $('viewer-video').load();
   } else {
-    $('viewer-image').src = preview.image;
-    $('viewer-image').hidden = false;
-    photoZoom.activate();
+    const image = $('viewer-image');
+    image.onload = () => {
+      if (token !== state.viewer.token) return;
+      image.hidden = false;
+      photoZoom.activate();
+      $('viewer-loading').hidden = true;
+    };
+    image.onerror = () => {
+      if (token === state.viewer.token)
+        viewerError('The preview is unavailable. Try opening the original file.');
+    };
+    image.src = preview.image;
+    if (image.complete && image.naturalWidth) image.onload();
   }
-  $('viewer-loading').hidden = true;
+  if (preview.video) $('viewer-loading').hidden = true;
   // Sequential, cancellable lookahead: at most one speculative request at a time.
   neighborTimer = setTimeout(() => prefetchNeighbors(token), 250);
+}
+function fitViewerVideo(item) {
+  const video = $('viewer-video');
+  const ratio =
+    video.videoWidth && video.videoHeight
+      ? video.videoWidth / video.videoHeight
+      : item.thumbnailWidth && item.thumbnailHeight
+        ? item.thumbnailWidth / item.thumbnailHeight
+        : 16 / 9;
+  const stage = document.querySelector('.viewer-stage');
+  if (!stage.clientWidth || !stage.clientHeight || !ratio) return;
+  const width = Math.min(stage.clientWidth, stage.clientHeight * ratio);
+  const height = width / ratio;
+  Object.assign(video.style, {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: `${width}px`,
+    height: `${height}px`,
+    transform: 'translate(-50%, -50%)',
+    objectFit: 'contain',
+  });
 }
 async function prefetchNeighbors(token) {
   if (token !== state.viewer.token || !$('lightbox').open) return;

@@ -1484,6 +1484,12 @@ dialog::backdrop {
   object-fit: contain;
   border-radius: 3px;
 }
+.viewer-stage video {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
 .viewer-stage img {
   width: 100%;
   height: 100%;
