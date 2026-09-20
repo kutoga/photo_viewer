@@ -558,6 +558,7 @@ function showViewerItem() {
   image.hidden = !p.hasThumbnail;
   if (p.hasThumbnail) image.src = PhotoModel.thumb(p);
   else image.removeAttribute('src');
+  photoZoom.reserve();
   image.alt = p.filename;
   $('viewer-error').hidden = true;
   $('viewer-loading').hidden = false;
@@ -601,7 +602,7 @@ function displayPreview(preview, item, token) {
   } else {
     $('viewer-image').src = preview.image;
     $('viewer-image').hidden = false;
-    photoZoom.render();
+    photoZoom.activate();
   }
   $('viewer-loading').hidden = true;
   // Sequential, cancellable lookahead: at most one speculative request at a time.

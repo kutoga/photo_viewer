@@ -6,7 +6,9 @@ class PhotoZoom {
     this.onDetail = onDetail;
     this.reset();
     image.draggable = false;
-    image.addEventListener('load', () => this.render());
+    image.addEventListener('load', () => {
+      if (!this.placeholder) this.render();
+    });
     stage.addEventListener(
       'wheel',
       (event) => {
@@ -59,10 +61,25 @@ class PhotoZoom {
   }
   reset(enabled = false) {
     this.enabled = enabled;
+    this.placeholder = enabled;
     this.zoom = 1;
     this.x = this.y = 0;
     this.drag = null;
     this.stage.classList.remove('is-dragging');
+    this.render();
+  }
+  reserve() {
+    if (!this.enabled) return;
+    this.placeholder = true;
+    Object.assign(this.image.style, {
+      width: '100%',
+      height: '100%',
+      transform: 'translate(-50%, -50%)',
+      objectFit: 'contain',
+    });
+  }
+  activate() {
+    this.placeholder = false;
     this.render();
   }
   fitScale() {
