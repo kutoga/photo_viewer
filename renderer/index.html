@@ -31,6 +31,11 @@
             <div class="overview-meta">
               <span><i class="dot"></i>Private. Local. Yours.</span>
             </div>
+            <div class="health-summary" aria-label="Library health">
+              <span><strong id="health-located">0</strong> located</span>
+              <span><strong id="health-undated">0</strong> undated</span>
+              <span><strong id="health-videos">0</strong> videos</span>
+            </div>
           </div>
           <div class="section-heading">
             <h2>Folders</h2>
@@ -49,6 +54,17 @@
             <span data-icon="plus"></span>Add a folder
           </button>
           <p class="folder-note" id="folder-note">Your originals stay right where they are.</p>
+          <div class="sidebar-divider"></div>
+          <div class="section-heading">
+            <h2>Collections</h2>
+            <button class="text-button" id="saved-view-add">Save current</button>
+          </div>
+          <div id="saved-view-list" class="saved-view-list"></div>
+          <button class="nav-item quiet-nav" id="favorites-filter">
+            <span data-icon="star"></span>Favorites<span class="nav-count" id="favorite-total"
+              >0</span
+            >
+          </button>
           <div class="sidebar-divider"></div>
           <div class="section-heading">
             <h2>Refine your view</h2>
@@ -79,6 +95,9 @@
           <p id="unlocated-note" class="subtle-note" hidden></p>
         </div>
         <div class="sidebar-footer">
+          <button id="settings-open" class="quiet-button">
+            <span data-icon="settings"></span>Settings
+          </button>
           <button id="help-open" class="quiet-button">
             <span data-icon="help"></span>Help & shortcuts</button
           ><span class="version">v2.0.1</span>
@@ -212,6 +231,13 @@
             <div class="gallery-toolbar">
               <span id="gallery-count">All memories</span>
               <div class="gallery-options">
+                <button
+                  id="gallery-slideshow"
+                  class="quiet-button"
+                  title="Play a slideshow of the current results"
+                >
+                  <span data-icon="play"></span>Slideshow
+                </button>
                 <label
                   >Size<input
                     id="gallery-size"
@@ -257,7 +283,7 @@
               <span data-icon="folder-plus"></span>Choose your first folder</button
             ><span class="empty-reassurance"
               ><span data-icon="shield"></span>Nothing uploaded. Originals untouched.</span
-            >
+            ><button id="empty-help" class="text-button">How GPS and local caching work</button>
           </div>
           <div class="no-results" id="no-results" hidden>
             <span data-icon="search"></span>
@@ -408,6 +434,12 @@
           <button id="viewer-path" class="viewer-path" title="Show in file manager"></button>
         </div>
         <div class="viewer-actions">
+          <button id="viewer-favorite" class="button glass">
+            <span data-icon="star"></span><span>Favorite</span>
+          </button>
+          <button id="viewer-slideshow" class="button glass">
+            <span data-icon="play"></span>Slideshow
+          </button>
           <button id="viewer-map" class="button glass">
             <span data-icon="pin"></span>Google Maps</button
           ><button id="viewer-original" class="button glass">
@@ -484,6 +516,34 @@
         <p class="help-footnote">
           HEIC decoding is included. Video playback depends on the video’s codec. If a preview is
           unavailable, use “Open original” to open your system’s default viewer.
+        </p>
+      </div>
+    </dialog>
+    <dialog id="settings-dialog" class="help-dialog settings-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">MAKE IT YOURS</span>
+          <h2>Settings</h2>
+        </div>
+        <button id="settings-close" class="icon-button" aria-label="Close settings">
+          <span data-icon="close"></span>
+        </button>
+      </div>
+      <div class="help-content settings-content">
+        <label class="setting-row"
+          ><span
+            ><strong>Reduce motion</strong
+            ><small>Use calmer transitions and fewer animations.</small></span
+          ><input id="setting-reduced-motion" type="checkbox"
+        /></label>
+        <label class="setting-row"
+          ><span
+            ><strong>Show coordinates</strong
+            ><small>Include GPS coordinates in photo details.</small></span
+          ><input id="setting-coordinates" type="checkbox" checked
+        /></label>
+        <p class="help-footnote">
+          Your settings are stored locally with this application. Original files are never modified.
         </p>
       </div>
     </dialog>

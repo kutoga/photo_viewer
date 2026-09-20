@@ -23,12 +23,15 @@ Supported build targets are **Windows 10/11 x64** (installer and portable execut
 4. Search filenames/folder paths, filter photos or videos, select a source folder, and narrow the timeline with the sliders or date pickers. Undated files stay visible.
 5. Open a photo for a larger preview. Click the small previous/next previews beside the image or use the arrow keys to navigate. Nearby previews preload after the current photo loads. Use the mouse wheel to zoom and drag to pan; double-click to switch between fitting the image and actual pixels. **Actual pixels** loads the original resolution on demand, including HEIC. You can also open its coordinates in Google Maps, reveal the file, or open it in your default viewer. Press Escape to close.
 6. Use the refresh button next to **Folders** to find additions, changes, and deletions. Scans can be stopped; completed work is saved.
+7. Star photos to build a persistent **Favorites** collection. Save a useful combination of filters, map position, and display settings as a named view, then reopen it from the sidebar. The gallery and viewer include a slideshow; press **Space** to start or stop it, and **J/K** or the arrow keys to move between items.
 
 Only media with embedded GPS coordinates appears on the map or in the gallery. The sidebar reports files without GPS. Adding folders never moves or edits originals; removing a folder deletes only its library entries and cached images, and preserves entries covered by another source folder.
 
 **Use view dates** sets the timeline to the earliest and latest dates of photos in the current map boundaries, open area panel, or matching gallery results. Area panels also offer **Use these dates**. Undated photos stay visible, and the timeline reset restores all dates. Gallery thumbnails preserve portrait and panoramic proportions without cropping. **Natural proportions** gives portrait photos taller cards; use the **Size** slider to adjust thumbnails, or choose **Uniform grid**. Monthly bars above the date slider show photo counts for the current folder/search/media filters, independent of the selected date range. Hover for counts and click a bar to select that month.
 
 Map position, display mode, label visibility, sidebar state, gallery settings, and window size are restored after restarting. Date and search filters start fresh.
+
+The **Settings** panel includes reduced-motion support and an option to show or hide GPS coordinates in the viewer. The empty-library help panel explains how local caching and GPS filtering work. Favorites and saved views are stored locally alongside the library data.
 
 ## Media support
 

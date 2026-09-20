@@ -2391,3 +2391,167 @@ kbd {
     padding: 10px 14px;
   }
 }
+
+/* Personal atlas polish: health, collections, favorites, and calmer controls. */
+.health-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 14px;
+  color: #8b9792;
+  font-size: 9px;
+}
+.health-summary span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.health-summary strong {
+  color: #496653;
+  font-size: 14px;
+  font-weight: 600;
+}
+.saved-view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 9px 3px;
+}
+.saved-view-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.saved-view-open {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: #f3f6f2;
+  color: #5d7464;
+  text-align: left;
+  font-size: 10px;
+}
+.saved-view-open:hover {
+  background: #e8f0e8;
+  color: #345743;
+}
+.saved-view-remove {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: transparent;
+  color: #a4ada7;
+}
+.saved-view-remove:hover {
+  background: #f5e9e4;
+  color: #a65a42;
+}
+.quiet-nav {
+  background: transparent;
+  color: #65766b;
+  font-weight: 550;
+  margin-top: 3px;
+}
+.quiet-nav:hover,
+.quiet-nav.selected {
+  background: #edf4ed;
+  color: #3f634b;
+}
+.quiet-nav svg {
+  width: 16px;
+  height: 16px;
+}
+.gallery-card {
+  position: relative;
+}
+.gallery-favorite {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffffdc;
+  color: #8a9790;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background 0.15s;
+  cursor: pointer;
+}
+.gallery-card:hover .gallery-favorite,
+.gallery-favorite.active {
+  opacity: 1;
+}
+.gallery-favorite:hover,
+.gallery-favorite.active {
+  color: #c56e4d;
+  background: white;
+}
+.gallery-favorite svg {
+  width: 14px;
+  height: 14px;
+}
+.viewer-actions .active {
+  color: #f2c18c;
+  border-color: #bd8962;
+  background: #ffffff14;
+}
+.viewer-actions .active svg {
+  fill: currentColor;
+}
+.settings-content {
+  padding-top: 18px;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.setting-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.setting-row strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.setting-row small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.setting-row input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+@media (max-width: 700px) {
+  .health-summary {
+    display: none;
+  }
+  .saved-view-list {
+    display: none;
+  }
+  .gallery-favorite {
+    opacity: 1;
+  }
+}

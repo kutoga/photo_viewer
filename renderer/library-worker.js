@@ -18,6 +18,10 @@ onmessage = ({ data }) => {
       datesDirty = true;
     } else if (data.type === 'filter') {
       const all = [...items.values()];
+      const favoriteIds = new Set(data.favoriteIds || []);
+      all.forEach((item) => {
+        item.favorite = favoriteIds.has(item.id);
+      });
       if (datesDirty) {
         dates = PhotoModel.dateBounds(all);
         datesDirty = false;

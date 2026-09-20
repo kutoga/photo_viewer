@@ -44,7 +44,7 @@ const state = {
   folders: [],
   summary: { total: 0, located: 0, withoutGPS: 0 },
   filtered: [],
-  filters: { type: 'all', search: '', folder: '', from: '', to: '' },
+  filters: { type: 'all', search: '', folder: '', from: '', to: '', favorites: false },
   view: 'map',
   sort: 'newest',
   scanning: false,
@@ -52,6 +52,9 @@ const state = {
   viewer: { list: [], index: -1, token: 0 },
   area: [],
   firstScan: false,
+  favorites: new Set(JSON.parse(localStorage.getItem('photo-map-favorites') || '[]')),
+  savedViews: JSON.parse(localStorage.getItem('photo-map-saved-views') || '[]'),
+  slideshow: null,
 };
 let atlas,
   gallery,
@@ -76,7 +79,100 @@ function sendFilter(options) {
     request: ++filterRequest,
     filters: state.filters,
     sort: state.sort,
+    favoriteIds: [...state.favorites],
   });
+}
+function persistFavorites() {
+  localStorage.setItem('photo-map-favorites', JSON.stringify([...state.favorites]));
+}
+function toggleFavorite(item) {
+  if (!item) return;
+  if (state.favorites.has(item.id)) state.favorites.delete(item.id);
+  else state.favorites.add(item.id);
+  item.favorite = state.favorites.has(item.id);
+  persistFavorites();
+  updateSummary();
+  gallery?.refreshFavorites();
+  areaGallery?.refreshFavorites();
+  if (state.filters.favorites) applyFilters({ resetGallery: false });
+  updateViewerFavorite();
+}
+function updateViewerFavorite() {
+  const item = viewerItem();
+  const button = $('viewer-favorite');
+  if (!item) return;
+  const active = state.favorites.has(item.id);
+  button.classList.toggle('active', active);
+  button.querySelector('span:last-child').textContent = active ? 'Favorited' : 'Favorite';
+  button.setAttribute('aria-pressed', String(active));
+}
+function renderSavedViews() {
+  const list = $('saved-view-list');
+  list.replaceChildren();
+  for (const [index, view] of state.savedViews.entries()) {
+    const row = document.createElement('div');
+    row.className = 'saved-view-row';
+    const open = document.createElement('button');
+    open.className = 'saved-view-open';
+    open.textContent = view.name;
+    open.title = 'Open saved view';
+    open.onclick = () => {
+      state.filters = { ...state.filters, ...view.filters };
+      $('search').value = state.filters.search || '';
+      $('folder-filter').value = state.filters.folder || '';
+      setType(state.filters.type || 'all', false);
+      state.sort = view.sort || state.sort;
+      $('sort-order').value = state.sort;
+      if (view.map)
+        atlas.map.setView([view.map.lat, view.map.lng], view.map.zoom, { animate: false });
+      if (view.mode) atlas.setMode(view.mode);
+      if (view.view) setView(view.view);
+      applyFilters();
+    };
+    const remove = document.createElement('button');
+    remove.className = 'saved-view-remove';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `Delete saved view ${view.name}`);
+    remove.onclick = () => {
+      state.savedViews.splice(index, 1);
+      localStorage.setItem('photo-map-saved-views', JSON.stringify(state.savedViews));
+      renderSavedViews();
+    };
+    row.append(open, remove);
+    list.append(row);
+  }
+}
+function saveCurrentView() {
+  const name = window.prompt('Name this saved view', `View ${state.savedViews.length + 1}`)?.trim();
+  if (!name) return;
+  const center = atlas.map.getCenter();
+  state.savedViews.push({
+    name,
+    filters: { ...state.filters },
+    sort: state.sort,
+    view: state.view,
+    map: { lat: center.lat, lng: center.lng, zoom: atlas.map.getZoom() },
+    mode: atlas.mode,
+  });
+  localStorage.setItem('photo-map-saved-views', JSON.stringify(state.savedViews));
+  renderSavedViews();
+  toast(`Saved view “${name}”.`);
+}
+function startSlideshow(
+  items = state.filtered,
+  index = state.viewer.index >= 0 ? state.viewer.index : 0,
+) {
+  if (!items.length) return;
+  clearInterval(state.slideshow);
+  openViewer(items, index);
+  state.slideshow = setInterval(() => moveViewer(1), 4500);
+  $('viewer-slideshow').classList.add('active');
+  toast('Slideshow playing · use Escape to stop');
+}
+function stopSlideshow() {
+  clearInterval(state.slideshow);
+  state.slideshow = null;
+  $('viewer-slideshow')?.classList.remove('active');
 }
 function initCatalog() {
   catalog = new Worker('library-worker.js');
@@ -99,6 +195,9 @@ function initCatalog() {
       return;
     }
     state.filtered = data.ids.map((id) => state.items.get(id)).filter(Boolean);
+    state.filtered.forEach((item) => {
+      item.favorite = state.favorites.has(item.id);
+    });
     state.dates = data.dates;
     renderMonths(data.months || []);
     atlas.setItems(state.filtered);
@@ -131,6 +230,9 @@ async function attempt(fn) {
 }
 function snapshot(data, fit = false) {
   state.items = new Map(data.items.map((p) => [p.id, p]));
+  state.items.forEach((item) => {
+    item.favorite = state.favorites.has(item.id);
+  });
   state.folders = data.folders;
   state.summary = data.summary;
   catalog.postMessage({ type: 'replace', items: data.items });
@@ -194,6 +296,14 @@ function updateSummary() {
   const located = state.items.size;
   $('library-total').textContent = count(state.summary.total);
   $('located-total').textContent = count(located);
+  $('health-located').textContent = count(located);
+  $('health-undated').textContent = count(
+    state.items.size - [...state.items.values()].filter((item) => item.date).length,
+  );
+  $('health-videos').textContent = count(
+    [...state.items.values()].filter((item) => item.type === 'video').length,
+  );
+  $('favorite-total').textContent = count(state.favorites.size);
   $('visible-count').textContent = count(state.filtered.length);
   $('visible-caption').textContent = isFiltered()
     ? 'matching memories'
@@ -223,7 +333,7 @@ function updateSummary() {
 }
 function isFiltered() {
   const f = state.filters;
-  return f.type !== 'all' || f.search || f.folder || f.from || f.to;
+  return f.type !== 'all' || f.search || f.folder || f.from || f.to || f.favorites;
 }
 function applyFilters({ resetGallery = true, fit = false } = {}) {
   clearTimeout(filterTimer);
@@ -248,10 +358,11 @@ function scheduleFilters() {
     );
 }
 function resetFilters() {
-  state.filters = { type: 'all', search: '', folder: '', from: '', to: '' };
+  state.filters = { type: 'all', search: '', folder: '', from: '', to: '', favorites: false };
   $('search').value = '';
   $('folder-filter').value = '';
   setType('all', false);
+  $('favorites-filter').classList.remove('selected');
   applyFilters();
 }
 function setType(type, apply = true) {
@@ -280,6 +391,9 @@ function setView(view) {
   else gallery.setItems(state.filtered);
 }
 function showArea(items, title = 'Photos in this area') {
+  items.forEach((item) => {
+    item.favorite = state.favorites.has(item.id);
+  });
   state.area = PhotoModel.sort(items, state.sort);
   $('area-title').textContent = title;
   $('area-count').textContent =
@@ -470,6 +584,7 @@ function photoById(id, list = state.filtered) {
   if (index >= 0) openViewer(list, index);
 }
 function closeViewer() {
+  stopSlideshow();
   state.viewer.token++;
   clearTimeout(previewTimer);
   $('viewer-video').pause();
@@ -568,10 +683,12 @@ function showViewerItem() {
   $('viewer-date').textContent = p.date
     ? new Date(p.date).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })
     : 'Date unknown';
-  $('viewer-date').textContent += ` · ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+  if (localStorage.getItem('photo-map-show-coordinates') !== 'false')
+    $('viewer-date').textContent += ` · ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
   $('viewer-path').textContent = p.originalPath;
   $('viewer-position').textContent =
     `${state.viewer.index + 1} / ${count(state.viewer.list.length)}  ·  ${p.type === 'video' ? 'VIDEO' : 'PHOTO'}`;
+  updateViewerFavorite();
   updateViewerNeighbors();
   video.onerror = () => {
     if (state.viewer.token === token)
@@ -721,6 +838,31 @@ function updateFullscreen() {
   requestAnimationFrame(() => atlas.resume());
 }
 function setupEvents() {
+  $('settings-open').addEventListener('click', () => $('settings-dialog').showModal());
+  $('settings-close').addEventListener('click', () => $('settings-dialog').close());
+  $('empty-help').addEventListener('click', () => $('help-dialog').showModal());
+  $('setting-reduced-motion').checked = localStorage.getItem('photo-map-reduced-motion') === 'true';
+  $('setting-coordinates').checked = localStorage.getItem('photo-map-show-coordinates') !== 'false';
+  const applySettings = () => {
+    document.body.classList.toggle('reduced-motion', $('setting-reduced-motion').checked);
+    localStorage.setItem('photo-map-reduced-motion', $('setting-reduced-motion').checked);
+    localStorage.setItem('photo-map-show-coordinates', $('setting-coordinates').checked);
+  };
+  $('setting-reduced-motion').addEventListener('change', applySettings);
+  $('setting-coordinates').addEventListener('change', applySettings);
+  applySettings();
+  $('saved-view-add').addEventListener('click', saveCurrentView);
+  renderSavedViews();
+  $('favorites-filter').addEventListener('click', () => {
+    state.filters.favorites = !state.filters.favorites;
+    $('favorites-filter').classList.toggle('selected', state.filters.favorites);
+    applyFilters();
+  });
+  $('viewer-favorite').addEventListener('click', () => toggleFavorite(viewerItem()));
+  $('viewer-slideshow').addEventListener('click', () =>
+    state.slideshow ? stopSlideshow() : startSlideshow(),
+  );
+  $('gallery-slideshow').addEventListener('click', () => startSlideshow(state.filtered, 0));
   $('timeline-months').addEventListener('click', (event) => {
     const month = event.target.closest('[data-month]')?.dataset.month;
     if (!month) return;
@@ -901,9 +1043,18 @@ function setupEvents() {
     }
     if ($('lightbox').open) {
       if (e.target === $('viewer-video')) return;
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key.toLowerCase() === 'j' ||
+        e.key.toLowerCase() === 'k'
+      ) {
         e.preventDefault();
-        moveViewer(e.key === 'ArrowLeft' ? -1 : 1);
+        moveViewer(e.key === 'ArrowLeft' || e.key.toLowerCase() === 'j' ? -1 : 1);
+      }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        state.slideshow ? stopSlideshow() : startSlideshow();
       }
       return;
     }
@@ -921,6 +1072,7 @@ function setupEvents() {
       else $('search').focus();
     }
     if (e.key.toLowerCase() === 'f') atlas.fit();
+    if (e.key.toLowerCase() === 's') startSlideshow();
     if (e.key === 'Escape') closeArea();
   });
   api.onChanges(({ upsert, remove }) => {
@@ -970,8 +1122,20 @@ async function init() {
     loadPhotoDetail,
   );
   atlas = new PhotoAtlas({ onPhoto: photoById, onArea: showArea, onError: error });
-  gallery = new VirtualGallery($('gallery-scroll'), $('gallery-space'), openViewer);
-  areaGallery = new VirtualGallery($('area-scroll'), $('area-space'), openViewer, true);
+  gallery = new VirtualGallery(
+    $('gallery-scroll'),
+    $('gallery-space'),
+    openViewer,
+    false,
+    toggleFavorite,
+  );
+  areaGallery = new VirtualGallery(
+    $('area-scroll'),
+    $('area-space'),
+    openViewer,
+    true,
+    toggleFavorite,
+  );
   if (!api) {
     error(
       'Open Photo Map as a desktop app using npm start. The browser alone cannot access your photo folders.',

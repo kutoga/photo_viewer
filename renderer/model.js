@@ -30,6 +30,7 @@
       (p) =>
         hasGPS(p) &&
         (filters.type === 'all' || !filters.type || (p.type || 'photo') === filters.type) &&
+        (!filters.favorites || p.favorite) &&
         (!q || p.originalPath.toLocaleLowerCase().includes(q)) &&
         (!filters.folder || withinFolder(p.originalPath, filters.folder)) &&
         (!p.date ||

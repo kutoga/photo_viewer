@@ -711,3 +711,28 @@ test('natural gallery gives portraits more height, supports resizing and retains
   await page.screenshot({ path: 'test-results/gallery-natural.png' });
   expect(errors).toEqual([]);
 });
+
+test('favorites, saved views, settings and slideshow work together', async ({ page }) => {
+  const errors = await setup(page);
+  await page.getByRole('button', { name: 'Gallery', exact: true }).click();
+  const first = page.locator('#gallery-scroll .gallery-card').first();
+  await first.locator('[data-favorite]').click();
+  await expect(page.locator('#favorite-total')).toHaveText('1');
+  await page.locator('#favorites-filter').click();
+  await expect(page.locator('#visible-count')).toHaveText('1');
+  await page.evaluate(() => (window.prompt = () => 'Family favorites'));
+  await page.locator('#saved-view-add').click();
+  await expect(page.locator('#saved-view-list')).toContainText('Family favorites');
+  await page.locator('#settings-open').click();
+  await page.locator('#setting-reduced-motion').check();
+  await page.locator('#setting-coordinates').uncheck();
+  await page.locator('#settings-close').click();
+  await first.click();
+  await expect(page.locator('#viewer-favorite')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#viewer-slideshow').click();
+  await expect(page.locator('#viewer-slideshow')).toHaveClass(/active/);
+  await page.keyboard.press('Space');
+  await expect(page.locator('#viewer-slideshow')).not.toHaveClass(/active/);
+  await page.keyboard.press('Escape');
+  expect(errors).toEqual([]);
+});

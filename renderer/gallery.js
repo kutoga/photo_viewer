@@ -1,10 +1,11 @@
 'use strict';
 class VirtualGallery {
-  constructor(scroll, space, onOpen, small = false) {
+  constructor(scroll, space, onOpen, small = false, onFavorite = null) {
     this.scroll = scroll;
     this.space = space;
     this.onOpen = onOpen;
     this.small = small;
+    this.onFavorite = onFavorite;
     this.targetSize = small ? 130 : 220;
     this.layoutMode = 'natural';
     this.dimensions = new Map();
@@ -19,7 +20,10 @@ class VirtualGallery {
     this.observer.observe(scroll);
     space.addEventListener('click', (e) => {
       const card = e.target.closest('[data-index]');
-      if (card) this.onOpen(this.items, Number(card.dataset.index));
+      if (!card) return;
+      const index = Number(card.dataset.index);
+      if (e.target.closest('[data-favorite]')) this.onFavorite?.(this.items[index]);
+      else this.onOpen(this.items, index);
     });
     space.addEventListener('keydown', (e) => {
       const card = e.target.closest('[data-index]');
@@ -46,6 +50,12 @@ class VirtualGallery {
     if (reset) this.scroll.scrollTop = 0;
     this.layout();
     this.render();
+  }
+  refreshFavorites() {
+    for (const [index, card] of this.cards) {
+      const item = this.items[index];
+      card.querySelector('[data-favorite]')?.classList.toggle('active', Boolean(item?.favorite));
+    }
   }
   setOptions(size, mode) {
     if (Number.isFinite(size)) this.targetSize = Math.max(150, Math.min(360, size));
@@ -128,6 +138,13 @@ class VirtualGallery {
         card.className = 'gallery-card';
         card.dataset.index = index;
         card.setAttribute('aria-label', `Open ${p.filename}`);
+        const favorite = document.createElement('span');
+        favorite.className = 'gallery-favorite';
+        favorite.dataset.favorite = '';
+        favorite.setAttribute('role', 'button');
+        favorite.setAttribute('aria-label', 'Toggle favorite');
+        favorite.innerHTML = icon('star');
+        favorite.classList.toggle('active', p.favorite);
         const pic = document.createElement('div');
         pic.className = 'gallery-picture';
         if (p.hasThumbnail) {
@@ -181,7 +198,7 @@ class VirtualGallery {
             })
           : 'Date unknown';
         caption.append(name, date);
-        card.append(pic, caption);
+        card.append(pic, caption, favorite);
         this.space.append(card);
         this.cards.set(index, card);
       }
