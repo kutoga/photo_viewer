@@ -1,5 +1,31 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
+test('journey follows dated photos chronologically and stops cleanly', async ({ page }) => {
+  const errors = await setup(page);
+  await expect(page.locator('[data-map-mode="bubbles"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#visible-count')).toHaveText('180');
+  await page.locator('#view-journey').click();
+  await expect(page.locator('#journey-panel')).toBeVisible();
+  await page.locator('#journey-play').click();
+  const dates = await page.evaluate(() => journey.items.map((p) => p.date));
+  expect(dates).toEqual([...dates].sort());
+  await page.locator('#journey-next').click();
+  await expect(page.locator('#journey-status')).toContainText('2 of');
+  await expect
+    .poll(() => page.evaluate(() => Math.abs(atlas.map.getCenter().lat - journey.items[1].lat)))
+    .toBeLessThan(0.001);
+  await page.locator('#journey-position').fill('3');
+  await expect(page.locator('#journey-status')).toContainText('4 of');
+  await page.locator('#journey-speed').selectOption('3000');
+  await page.locator('#journey-play').click();
+  await expect(page.locator('#journey-status')).toContainText('5 of', { timeout: 5000 });
+  await page.locator('#journey-play').click();
+  await page.screenshot({ path: 'test-results/journey.png' });
+  await page.locator('#journey-close').click();
+  await expect(page.locator('#journey-panel')).toBeHidden();
+  expect(await page.evaluate(() => journey.timer)).toBeNull();
+  expect(errors).toEqual([]);
+});
 async function setup(page, size = 180, tiles = false, needsRescan = false) {
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));

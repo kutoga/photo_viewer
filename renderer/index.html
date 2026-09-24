@@ -128,6 +128,9 @@
               ><button id="view-gallery" aria-pressed="false">
                 <span data-icon="grid"></span>Gallery
               </button>
+              <button id="view-journey" aria-pressed="false">
+                <span data-icon="play"></span>Journey
+              </button>
             </div>
             <button class="button primary" data-add-folder>
               <span data-icon="plus"></span>Add photos
@@ -157,8 +160,7 @@
               <div class="map-display-switch" role="group" aria-label="Map display">
                 <button
                   data-map-mode="auto"
-                  class="selected"
-                  aria-pressed="true"
+                  aria-pressed="false"
                   title="Switch from heatmap to clusters as you zoom"
                 >
                   Auto
@@ -172,7 +174,8 @@
                 </button>
                 <button
                   data-map-mode="bubbles"
-                  aria-pressed="false"
+                  class="selected"
+                  aria-pressed="true"
                   title="Show numbered bubbles at every zoom level"
                 >
                   Bubbles
@@ -291,6 +294,53 @@
             <p id="no-results-description">Try a different date, folder, or media type.</p>
             <button id="clear-empty-filters" class="button secondary">Clear filters</button>
           </div>
+          <aside id="journey-panel" class="journey-panel" hidden aria-label="Photo journey">
+            <div class="journey-heading">
+              <span class="eyebrow">YOUR STORY, IN ORDER</span
+              ><button id="journey-close" class="icon-button" aria-label="Close journey">
+                <span data-icon="close"></span>
+              </button>
+            </div>
+            <p id="journey-date"></p>
+            <button id="journey-photo" class="journey-photo" aria-label="Open journey photo">
+              <img id="journey-image" alt="" />
+            </button>
+            <strong id="journey-name"></strong>
+            <p id="journey-status" role="status"></p>
+            <input
+              id="journey-position"
+              type="range"
+              min="0"
+              max="0"
+              value="0"
+              aria-label="Journey position"
+            />
+            <div class="journey-controls">
+              <button
+                id="journey-prev"
+                class="button secondary"
+                aria-label="Previous journey photo"
+              >
+                Previous
+              </button>
+              <button id="journey-play" class="button primary">Play</button>
+              <button id="journey-next" class="button secondary" aria-label="Next journey photo">
+                Next
+              </button>
+            </div>
+            <label class="journey-speed"
+              >Time per photo
+              <select id="journey-speed">
+                <option value="3000">3 seconds</option>
+                <option value="6000" selected>6 seconds</option>
+                <option value="10000">10 seconds</option>
+              </select></label
+            >
+            <p class="help-footnote">
+              Oldest to newest, using your current filters. Only photos with a date and location are
+              included.
+            </p>
+          </aside>
           <aside id="area-panel" class="area-panel" hidden aria-label="Photos in this area">
             <div class="area-heading">
               <div>

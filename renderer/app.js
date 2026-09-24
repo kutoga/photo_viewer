@@ -195,6 +195,7 @@ function initCatalog() {
       return;
     }
     state.filtered = data.ids.map((id) => state.items.get(id)).filter(Boolean);
+    if (!$('journey-panel').hidden) closeJourney();
     state.filtered.forEach((item) => {
       item.favorite = state.favorites.has(item.id);
     });
@@ -374,7 +375,98 @@ function setType(type, apply = true) {
   });
   if (apply) applyFilters();
 }
+const journey = { items: [], index: 0, timer: null, token: 0, marker: null };
+function pauseJourney() {
+  clearTimeout(journey.timer);
+  journey.timer = null;
+  $('journey-play').textContent = 'Play';
+}
+function closeJourney() {
+  pauseJourney();
+  journey.token++;
+  journey.marker?.remove();
+  journey.marker = null;
+  $('journey-panel').hidden = true;
+  $('view-journey').setAttribute('aria-pressed', 'false');
+  $('view-journey').classList.remove('selected');
+  document.querySelector('.explorer').classList.remove('journey-active');
+  atlas?.map.stop();
+  atlas?.map.invalidateSize({ pan: false });
+}
+function queueJourney() {
+  clearTimeout(journey.timer);
+  if (journey.index >= journey.items.length - 1) return pauseJourney();
+  $('journey-play').textContent = 'Pause';
+  journey.timer = setTimeout(
+    () => {
+      journey.index++;
+      showJourneyPhoto();
+      queueJourney();
+    },
+    Number($('journey-speed').value),
+  );
+}
+async function showJourneyPhoto() {
+  const item = journey.items[journey.index];
+  if (!item) return;
+  const token = ++journey.token;
+  $('journey-date').textContent = new Date(item.date).toLocaleString(undefined, {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  });
+  $('journey-name').textContent = item.filename;
+  $('journey-status').textContent = `${journey.index + 1} of ${count(journey.items.length)} photos`;
+  $('journey-position').value = journey.index;
+  $('journey-prev').disabled = journey.index === 0;
+  $('journey-next').disabled = journey.index === journey.items.length - 1;
+  const img = $('journey-image');
+  img.alt = item.filename;
+  img.src = PhotoModel.thumb(item);
+  img.onerror = () => {
+    if (token === journey.token) $('journey-status').textContent += ' · Preview unavailable';
+  };
+  const point = [item.lat, item.lng];
+  journey.marker?.remove();
+  journey.marker = L.circleMarker(point, {
+    radius: 12,
+    color: '#fff',
+    weight: 3,
+    fillColor: '#bf6848',
+    fillOpacity: 1,
+  }).addTo(atlas.map);
+  atlas.map.stop();
+  atlas.map.flyTo(point, 14, { animate: !$('setting-reduced-motion').checked, duration: 1.4 });
+  try {
+    const preview = await previewCache.load(item);
+    if (token === journey.token && preview.image) img.src = preview.image;
+  } catch {
+    if (token === journey.token) $('journey-status').textContent += ' · Showing thumbnail';
+  }
+}
+function startJourney() {
+  const items = PhotoModel.sort(
+    state.filtered.filter(
+      (p) =>
+        p.type !== 'video' && PhotoModel.hasGPS(p) && p.date && Number.isFinite(Date.parse(p.date)),
+    ),
+    'oldest',
+  );
+  if (!items.length) return toast('No dated, geotagged photos match your filters.');
+  setView('map');
+  stopSlideshow();
+  journey.items = items;
+  journey.index = 0;
+  $('journey-panel').hidden = false;
+  $('view-journey').setAttribute('aria-pressed', 'true');
+  $('view-journey').classList.add('selected');
+  document.querySelector('.explorer').classList.add('journey-active');
+  $('journey-position').max = items.length - 1;
+  atlas.map.invalidateSize({ pan: false });
+  showJourneyPhoto();
+  queueJourney();
+}
 function setView(view) {
+  closeJourney();
   state.view = view;
   const mapView = view === 'map';
   $('map-view').hidden = !mapView;
@@ -391,6 +483,7 @@ function setView(view) {
   else gallery.setItems(state.filtered);
 }
 function showArea(items, title = 'Photos in this area') {
+  closeJourney();
   items.forEach((item) => {
     item.favorite = state.favorites.has(item.id);
   });
@@ -574,6 +667,7 @@ function viewerItem() {
   return state.viewer.list[state.viewer.index];
 }
 function openViewer(items, index) {
+  pauseJourney();
   state.viewer.list = [...items];
   state.viewer.index = index;
   if (!$('lightbox').open) $('lightbox').showModal();
@@ -973,6 +1067,34 @@ function setupEvents() {
     await attempt(() => api.cancelScan());
   });
   $('view-map').addEventListener('click', () => setView('map'));
+  $('view-journey').addEventListener('click', startJourney);
+  $('journey-close').addEventListener('click', closeJourney);
+  $('journey-play').addEventListener('click', () => {
+    if (journey.timer) return pauseJourney();
+    if (journey.index === journey.items.length - 1) {
+      journey.index = 0;
+      showJourneyPhoto();
+    }
+    queueJourney();
+  });
+  for (const [id, step] of [
+    ['journey-prev', -1],
+    ['journey-next', 1],
+  ])
+    $(id).addEventListener('click', () => {
+      pauseJourney();
+      journey.index = Math.max(0, Math.min(journey.items.length - 1, journey.index + step));
+      showJourneyPhoto();
+    });
+  $('journey-position').addEventListener('input', () => {
+    pauseJourney();
+    journey.index = Number($('journey-position').value);
+    showJourneyPhoto();
+  });
+  $('journey-speed').addEventListener('change', () => {
+    if (journey.timer) queueJourney();
+  });
+  $('journey-photo').addEventListener('click', () => openViewer(journey.items, journey.index));
   $('view-gallery').addEventListener('click', () => setView('gallery'));
   $('brand-home').addEventListener('click', (e) => {
     e.preventDefault();
@@ -1195,8 +1317,11 @@ async function init() {
     map.zoom >= 2 &&
     map.zoom <= 22;
   if (restoreMap) atlas.map.setView([map.lat, map.lng], map.zoom, { animate: false });
-  if (['auto', 'heat', 'bubbles'].includes(workspace.mode))
-    document.querySelector(`[data-map-mode="${workspace.mode}"]`).click();
+  document
+    .querySelector(
+      `[data-map-mode="${['auto', 'heat', 'bubbles'].includes(workspace.mode) ? workspace.mode : 'bubbles'}"]`,
+    )
+    .click();
   if (typeof workspace.labels === 'boolean') {
     $('show-labels').checked = workspace.labels;
     atlas.setLabels(workspace.labels);

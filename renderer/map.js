@@ -5,7 +5,7 @@ class PhotoAtlas {
     this.onArea = onArea;
     this.onError = onError;
     this.items = new Map();
-    this.mode = 'auto';
+    this.mode = 'bubbles';
     this.markers = new Map();
     this.version = 0;
     this.renderedVersion = 0;
