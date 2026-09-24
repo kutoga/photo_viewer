@@ -195,7 +195,6 @@ function initCatalog() {
       return;
     }
     state.filtered = data.ids.map((id) => state.items.get(id)).filter(Boolean);
-    if (!$('journey-panel').hidden) closeJourney();
     state.filtered.forEach((item) => {
       item.favorite = state.favorites.has(item.id);
     });
@@ -205,7 +204,7 @@ function initCatalog() {
     updateDates();
     updateSummary();
     if (state.view === 'gallery') gallery.setItems(state.filtered, filterOptions.resetGallery);
-    if (filterOptions.fit && state.items.size) atlas.fit();
+    if (filterOptions.fit && state.items.size && $('journey-panel').hidden) atlas.fit();
   };
 }
 const count = (value) => Number(value).toLocaleString();
@@ -339,7 +338,10 @@ function isFiltered() {
 function applyFilters({ resetGallery = true, fit = false } = {}) {
   clearTimeout(filterTimer);
   filterTimer = null;
-  if (resetGallery) closeArea();
+  if (resetGallery) {
+    closeArea();
+    closeJourney();
+  }
   const options = { resetGallery, fit: fit || (filterOptions?.fit && filterBusy) };
   if (filterBusy) {
     pendingFilter = {

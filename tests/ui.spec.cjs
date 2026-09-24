@@ -26,6 +26,43 @@ test('journey follows dated photos chronologically and stops cleanly', async ({ 
   expect(await page.evaluate(() => journey.timer)).toBeNull();
   expect(errors).toEqual([]);
 });
+test('journey keeps playing through import updates and completion', async ({ page }) => {
+  const errors = await setup(page);
+  await expect(page.locator('#visible-count')).toHaveText('180');
+  await page.locator('#view-journey').click();
+  await page.locator('#journey-speed').selectOption('3000');
+  const ids = await page.evaluate(() => journey.items.map((p) => p.id));
+  await page.evaluate(() => {
+    state.firstScan = true;
+    window.__events.progress({ processed: 1, discovered: 2, added: 1 });
+    window.__events.changes({
+      upsert: [{ ...window.__snapshot.items[1], id: 'new-photo' }],
+      remove: [],
+    });
+  });
+  await expect(page.locator('#visible-count')).toHaveText('181');
+  await expect(page.locator('#journey-panel')).toBeVisible();
+  await expect(page.locator('#journey-status')).toContainText('2 of', { timeout: 5000 });
+  await page.evaluate(() => {
+    window.__events.complete({
+      ...window.__snapshot,
+      phase: 'complete',
+      added: 1,
+      skipped: 0,
+      errors: 0,
+    });
+  });
+  await expect(page.locator('#scan-panel')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => filterBusy)).toBe(false);
+  await expect(page.locator('#journey-play')).toHaveText('Pause');
+  expect(await page.evaluate(() => journey.items.map((p) => p.id))).toEqual(ids);
+  await expect.poll(() => page.evaluate(() => atlas.map.getZoom())).toBe(14);
+  await page.locator('#journey-play').click();
+  await page.locator('#search').fill('Morning');
+  await expect(page.locator('#journey-panel')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 async function setup(page, size = 180, tiles = false, needsRescan = false) {
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));
