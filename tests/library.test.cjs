@@ -43,6 +43,36 @@ async function fixture(t, run) {
   });
   return { root, source, nested, calls, lib };
 }
+test('storage counts all entries and measures cache separately from originals', async (t) => {
+  const { lib } = await fixture(t);
+  lib.entries.set('a', { type: 'photo', fileSize: 100 });
+  lib.entries.set('b', { type: 'video', fileSize: 200 });
+  await fs.writeFile(path.join(lib.cacheDir, 'metadata.json'), '12345');
+  await fs.writeFile(path.join(lib.cacheDir, 'thumbnails', 'test.jpg'), '123');
+  await fs.writeFile(path.join(lib.cacheDir, 'previews', 'test.jpg'), '1234');
+  const stats = await lib.storageStats();
+  assert.equal(stats.total, 2);
+  assert.equal(stats.photos, 1);
+  assert.equal(stats.videos, 1);
+  assert.equal(stats.totalBytes, 12);
+  assert.equal(stats.originalBytes, 300);
+});
+
+test('checksums match identical contents and change on rescan', async (t) => {
+  const { lib, source } = await fixture(t);
+  await fs.writeFile(path.join(source, 'a.jpg'), 'identical');
+  await fs.writeFile(path.join(source, 'b.jpg'), 'identical');
+  await lib.addFolders([source]);
+  await lib.startScan();
+  let entries = [...lib.entries.values()];
+  assert.match(entries[0].contentHash, /^[a-f0-9]{64}$/);
+  assert.equal(entries[0].contentHash, entries[1].contentHash);
+  await fs.writeFile(path.join(source, 'b.jpg'), 'changed contents');
+  await lib.startScan();
+  entries = [...lib.entries.values()];
+  assert.notEqual(entries[0].contentHash, entries[1].contentHash);
+});
+
 test('overlapping folders index once, unchanged rescans do no media work, deletion is reconciled', async (t) => {
   const { source, nested, lib, calls } = await fixture(t);
   const file = path.join(nested, 'a.jpg');

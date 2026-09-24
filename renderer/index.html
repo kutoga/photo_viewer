@@ -532,6 +532,24 @@
       <div class="help-content settings-content">
         <label class="setting-row"
           ><span
+            ><strong>Hide exact duplicates</strong
+            ><small
+              >Show identical file contents only once. Originals are kept. Existing libraries are
+              checked on rescan.</small
+            ></span
+          ><input id="setting-hide-duplicates" type="checkbox" checked
+        /></label>
+        <section aria-labelledby="library-stats-heading">
+          <h3 id="library-stats-heading">Library &amp; storage</h3>
+          <p id="library-stats-status" role="status"></p>
+          <dl id="library-stats" class="library-stats" hidden></dl>
+          <p class="help-footnote">
+            Includes all indexed files, even without GPS. Originals stay in your source folders;
+            their size is recorded at the last scan.
+          </p>
+        </section>
+        <label class="setting-row"
+          ><span
             ><strong>Reduce motion</strong
             ><small>Use calmer transitions and fewer animations.</small></span
           ><input id="setting-reduced-motion" type="checkbox"

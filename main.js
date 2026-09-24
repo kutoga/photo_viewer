@@ -176,6 +176,7 @@ if (!app.requestSingleInstanceLock()) {
       library.on('progress', (data) => send('scan:progress', data));
       library.on('complete', (data) => send('scan:complete', data));
       handle('library:get', () => library.snapshot());
+      handle('library:storage', () => library.storageStats());
       handle('folders:add', async () => {
         if (library.scan) throw new Error('Wait for the current scan to finish.');
         const result = await dialog.showOpenDialog(window, {

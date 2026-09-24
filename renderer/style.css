@@ -2465,6 +2465,17 @@ kbd {
   width: 16px;
   height: 16px;
 }
+.library-stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 20px;
+  font-size: 13px;
+}
+.library-stats dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .gallery-favorite {
   position: absolute;
   top: 8px;

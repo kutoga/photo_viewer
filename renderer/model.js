@@ -26,6 +26,7 @@
   };
   function filter(items, filters) {
     const q = (filters.search || '').trim().toLocaleLowerCase();
+    const seen = new Set();
     return items.filter(
       (p) =>
         hasGPS(p) &&
@@ -35,7 +36,10 @@
         (!filters.folder || withinFolder(p.originalPath, filters.folder)) &&
         (!p.date ||
           ((!filters.from || day(p.date) >= filters.from) &&
-            (!filters.to || day(p.date) <= filters.to))),
+            (!filters.to || day(p.date) <= filters.to))) &&
+        (!filters.hideDuplicates ||
+          !p.contentHash ||
+          (!seen.has(p.contentHash) && Boolean(seen.add(p.contentHash)))),
     );
   }
   function dateBounds(items) {

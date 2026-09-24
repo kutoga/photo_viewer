@@ -12,6 +12,7 @@ const listen = (channel, fn) => {
 };
 contextBridge.exposeInMainWorld('photoMap', {
   getLibrary: () => invoke('library:get'),
+  getStorageStats: () => invoke('library:storage'),
   addFolders: () => invoke('folders:add'),
   removeFolder: (dir) => invoke('folders:remove', dir),
   startScan: () => invoke('scan:start'),

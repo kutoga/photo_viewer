@@ -77,7 +77,7 @@ function sendFilter(options) {
   catalog.postMessage({
     type: 'filter',
     request: ++filterRequest,
-    filters: state.filters,
+    filters: { ...state.filters, hideDuplicates: $('setting-hide-duplicates').checked },
     sort: state.sort,
     favoriteIds: [...state.favorites],
   });
@@ -838,11 +838,52 @@ function updateFullscreen() {
   requestAnimationFrame(() => atlas.resume());
 }
 function setupEvents() {
-  $('settings-open').addEventListener('click', () => $('settings-dialog').showModal());
+  $('settings-open').addEventListener('click', async () => {
+    $('settings-dialog').showModal();
+    const status = $('library-stats-status');
+    const list = $('library-stats');
+    list.hidden = true;
+    status.textContent = 'Calculating library size…';
+    const bytes = (value) => {
+      const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+      const unit = value > 0 ? Math.min(4, Math.floor(Math.log(value) / Math.log(1024))) : 0;
+      return `${(value / 1024 ** unit).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`;
+    };
+    try {
+      const stats = await api.getStorageStats();
+      list.replaceChildren();
+      for (const [label, value] of [
+        ['Indexed files', count(stats.total)],
+        ['Photos', count(stats.photos)],
+        ['Videos', count(stats.videos)],
+        ['Library on disk', bytes(stats.totalBytes)],
+        ['Database', bytes(stats.database)],
+        ['Thumbnails', bytes(stats.thumbnails)],
+        ['Cached previews', bytes(stats.previews)],
+        ['Original files (separate)', bytes(stats.originalBytes)],
+      ]) {
+        const term = document.createElement('dt');
+        const detail = document.createElement('dd');
+        term.textContent = label;
+        detail.textContent = value;
+        list.append(term, detail);
+      }
+      list.hidden = false;
+      status.textContent = 'Updated now · Reopen Settings to refresh.';
+    } catch {
+      status.textContent = 'Could not measure library storage. Reopen Settings to retry.';
+    }
+  });
   $('settings-close').addEventListener('click', () => $('settings-dialog').close());
   $('empty-help').addEventListener('click', () => $('help-dialog').showModal());
   $('setting-reduced-motion').checked = localStorage.getItem('photo-map-reduced-motion') === 'true';
   $('setting-coordinates').checked = localStorage.getItem('photo-map-show-coordinates') !== 'false';
+  $('setting-hide-duplicates').checked =
+    localStorage.getItem('photo-map-hide-duplicates') !== 'false';
+  $('setting-hide-duplicates').addEventListener('change', () => {
+    localStorage.setItem('photo-map-hide-duplicates', $('setting-hide-duplicates').checked);
+    applyFilters();
+  });
   const applySettings = () => {
     document.body.classList.toggle('reduced-motion', $('setting-reduced-motion').checked);
     localStorage.setItem('photo-map-reduced-motion', $('setting-reduced-motion').checked);
@@ -1176,7 +1217,9 @@ async function init() {
     if (state.items.size)
       $('status-text').textContent = 'Library ready · Everything stays on your device';
     if (data.needsRescan && !data.scan) {
-      toast('Refreshing older thumbnails in the background. You can keep exploring.');
+      toast(
+        'Updating your library and checking exact duplicates in the background. You can keep exploring.',
+      );
       await startScan();
     }
   }

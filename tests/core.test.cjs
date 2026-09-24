@@ -15,6 +15,24 @@ const {
 } = require('../lib/core.cjs');
 const model = require('../renderer/model.js');
 
+test('exact duplicate filtering respects folders and keeps files without checksums', () => {
+  const items = [
+    { id: 'a', originalPath: '/a/photo.jpg', contentHash: 'same', lat: 0, lng: 0 },
+    { id: 'b', originalPath: '/b/photo.jpg', contentHash: 'same', lat: 0, lng: 0 },
+    { id: 'c', originalPath: '/b/other.jpg', contentHash: 'different', lat: 0, lng: 0 },
+    { id: 'd', originalPath: '/b/unknown.jpg', lat: 0, lng: 0 },
+  ];
+  assert.deepEqual(
+    model.filter(items, { hideDuplicates: true }).map((p) => p.id),
+    ['a', 'c', 'd'],
+  );
+  assert.equal(model.filter(items, { hideDuplicates: false }).length, 4);
+  assert.deepEqual(
+    model.filter(items, { hideDuplicates: true, folder: '/b' }).map((p) => p.id),
+    ['b', 'c', 'd'],
+  );
+});
+
 test('Windows paths: case insensitive, safe boundaries, roots, and UNC paths', () => {
   assert.ok(isWithin('C:\\Photos\\Trip\\a.jpg', 'c:\\photos', 'win32'));
   assert.ok(isWithin('C:\\Photos\\a.jpg', 'C:\\', 'win32'));
